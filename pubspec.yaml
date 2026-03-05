@@ -10,7 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  flutter_tts: ^4.0.2
+  flutter_tts:
+    path: ./dependencies/flutter_tts
   google_mlkit_text_recognition: ^0.13.0
   image_picker: ^1.1.2
   hive_flutter: ^1.1.0
