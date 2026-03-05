@@ -55,9 +55,19 @@ fi
 
 # ---- Patch Android config for plugin compatibility ----
 echo "🔧 Patching Android config..."
-sed -i 's/org.jetbrains.kotlin.android" version "[^"]*"/org.jetbrains.kotlin.android" version "2.1.0"/' android/settings.gradle
-sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle
-sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' android/app/build.gradle
+if [ -f "android/settings.gradle.kts" ]; then
+  SETTINGS="android/settings.gradle.kts"
+else
+  SETTINGS="android/settings.gradle"
+fi
+if [ -f "android/app/build.gradle.kts" ]; then
+  BUILD="android/app/build.gradle.kts"
+else
+  BUILD="android/app/build.gradle"
+fi
+
+sed -i -E 's/(org\.jetbrains\.kotlin\.android.* version ")([^"]*)/\12.1.0/' "$SETTINGS"
+sed -i -E 's/compileSdk\s*=\s*(flutter\.compileSdkVersion|[0-9]+)/compileSdk = 36/' "$BUILD"
 
 flutter pub get
 
