@@ -6,3 +6,6 @@ enum OcrMode { mlkit, llm }
 
 /// App language
 enum AppLocale { en, zh }
+
+/// Theme mode: system, light, dark
+enum AppThemeMode { system, light, dark }

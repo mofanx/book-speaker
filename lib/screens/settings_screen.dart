@@ -59,7 +59,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(title: Text(t('settings'))),
       body: ListView(
         children: [
-          // =========== Language ===========
+          // =========== App Settings ===========
+          _section(t('settings')),
+          ListTile(
+            title: const Text('Theme Mode'),
+            subtitle: Text(s.themeMode.name),
+            trailing: SegmentedButton<AppThemeMode>(
+              segments: const [
+                ButtonSegment(
+                  value: AppThemeMode.system,
+                  icon: Icon(Icons.brightness_auto),
+                  label: Text('System'),
+                ),
+                ButtonSegment(
+                  value: AppThemeMode.light,
+                  icon: Icon(Icons.light_mode),
+                  label: Text('Light'),
+                ),
+                ButtonSegment(
+                  value: AppThemeMode.dark,
+                  icon: Icon(Icons.dark_mode),
+                  label: Text('Dark'),
+                ),
+              ],
+              selected: {s.themeMode},
+              onSelectionChanged: (Set<AppThemeMode> newSelection) {
+                setState(() {
+                  s.themeMode = newSelection.first;
+                  // The ValueListenableBuilder in main.dart will pick this up implicitly
+                  // because we rebuild S.notifier via S.setLocale when language changes,
+                  // but for theme we need a better trigger. Let's just update locale 
+                  // with the same locale to trigger a rebuild for now as a quick fix,
+                  // or ideally we should use a ValueNotifier for theme.
+                  S.setLocale(s.appLocale);
+                });
+              },
+            ),
+          ),
+          const Divider(),
           _section(t('settings_language')),
           _radioTile<AppLocale>(
             title: 'English',

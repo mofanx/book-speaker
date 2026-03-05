@@ -13,7 +13,7 @@ class SettingsService {
     _providerBox ??= await Hive.openBox<String>(_providerBoxName);
   }
 
-  // =========== App Locale ===========
+  // =========== App Settings ===========
 
   AppLocale get appLocale {
     final idx = _box?.get('appLocale', defaultValue: 0) ?? 0;
@@ -21,6 +21,13 @@ class SettingsService {
   }
 
   set appLocale(AppLocale v) => _box?.put('appLocale', v.index);
+
+  AppThemeMode get themeMode {
+    final idx = _box?.get('themeMode', defaultValue: 0) ?? 0;
+    return AppThemeMode.values[idx.clamp(0, AppThemeMode.values.length - 1)];
+  }
+
+  set themeMode(AppThemeMode v) => _box?.put('themeMode', v.index);
 
   // =========== Provider Management ===========
 
