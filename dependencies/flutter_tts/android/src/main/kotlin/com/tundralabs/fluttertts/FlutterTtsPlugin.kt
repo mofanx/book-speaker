@@ -310,10 +310,10 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
                 }
                 val b = speak(text, focus)
                 if (!b) {
-                    synchronized(this@FlutterTtsPlugin) {
-                        val suspendedCall = Runnable { onMethodCall(call, result) }
-                        pendingMethodCalls.add(suspendedCall)
-                    }
+                    // Connection dead - speak() already recreated TTS in background
+                    // Return 0 immediately instead of queuing (prevents Dart Future hang)
+                    Log.d(tag, "speak returned false (connection dead), returning 0")
+                    result.success(0)
                     return
                 }
                 // Only use await speak completion if queueMode is set to QUEUE_FLUSH

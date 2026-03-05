@@ -48,9 +48,28 @@ class TtsService {
   String get languageTag => _settings.systemTtsLanguage;
 
   /// Initialize system TTS engine. Safe to call multiple times.
+  /// Re-initializes if previous attempt failed.
   Future<void> init() async {
-    if (_initialized) return;
+    if (_initialized && _error == null) return;
+    _initialized = false;
+    _engineReady = false;
+    _error = null;
     await _initSystemTts();
+  }
+
+  // ---- Timeout helper: prevents any native call from hanging ----
+
+  Future<T?> _safe<T>(Future<T> call,
+      {Duration timeout = const Duration(seconds: 5)}) async {
+    try {
+      return await call.timeout(timeout);
+    } on TimeoutException {
+      debugPrint('[TTS] native call timed out after ${timeout.inSeconds}s');
+      return null;
+    } catch (e) {
+      debugPrint('[TTS] native call error: $e');
+      return null;
+    }
   }
 
   // ---- Initialization (Kelivo's proven pattern) ----
@@ -60,16 +79,22 @@ class TtsService {
       _tts = FlutterTts();
       _bindHandlers();
       await _kickEngine();
-      await _ensureBound(timeout: const Duration(seconds: 5));
+      final bound = await _ensureBound(timeout: const Duration(seconds: 6));
+      if (!bound) {
+        _error = 'TTS engine not responding';
+        _initialized = true; // mark tried — UI shows error
+        debugPrint('[TTS] init: engine NOT bound');
+        return;
+      }
       await _selectEngine();
       await _applyConfig();
       _initialized = true;
       _error = null;
-      debugPrint('[TTS] initialized, engineReady=$_engineReady');
+      debugPrint('[TTS] initialized OK, engineReady=$_engineReady');
     } catch (e) {
-      debugPrint('[TTS] init failed: $e');
+      debugPrint('[TTS] init exception: $e');
       _error = e.toString();
-      _initialized = false;
+      _initialized = true;
     }
   }
 
@@ -110,72 +135,91 @@ class TtsService {
   }
 
   Future<void> _kickEngine() async {
-    try { await _tts.getLanguages; } catch (_) {}
-    try { await _tts.getEngines; } catch (_) {}
+    // Fire queries to trigger native TTS init (short timeout, don't wait)
+    _safe<dynamic>(_tts.getLanguages, timeout: const Duration(seconds: 1));
+    await Future.delayed(const Duration(milliseconds: 50));
+    _safe<dynamic>(_tts.getEngines, timeout: const Duration(seconds: 1));
+    await Future.delayed(const Duration(milliseconds: 100));
   }
 
-  Future<void> _ensureBound({Duration timeout = const Duration(seconds: 3)}) async {
-    if (_engineReady) return;
+  /// Returns true if engine is ready (languages list non-empty).
+  Future<bool> _ensureBound({Duration timeout = const Duration(seconds: 5)}) async {
+    if (_engineReady) return true;
     final deadline = DateTime.now().add(timeout);
+    int attempt = 0;
     while (DateTime.now().isBefore(deadline)) {
-      try {
-        final langs = await _tts.getLanguages;
-        if (langs != null) {
-          _engineReady = true;
-          debugPrint('[TTS] engine bound');
-          return;
-        }
-      } catch (_) {}
-      await Future.delayed(const Duration(milliseconds: 120));
+      attempt++;
+      final langs = await _safe<dynamic>(
+        _tts.getLanguages,
+        timeout: const Duration(seconds: 2),
+      );
+      if (langs is List && langs.isNotEmpty) {
+        _engineReady = true;
+        debugPrint('[TTS] engine bound (${langs.length} langs, attempt $attempt)');
+        return true;
+      }
+      debugPrint('[TTS] _ensureBound attempt $attempt: langs=${langs.runtimeType}(${langs is List ? langs.length : 'null'})');
+      await Future.delayed(const Duration(milliseconds: 200));
     }
-    debugPrint('[TTS] WARNING: engine not bound after ${timeout.inSeconds}s');
+    debugPrint('[TTS] engine NOT bound after ${timeout.inSeconds}s ($attempt attempts)');
+    return false;
   }
 
   Future<void> _selectEngine() async {
     // If user has a saved engine preference, use it
     final saved = _settings.systemTtsEngine;
     if (saved.isNotEmpty) {
-      try { await _tts.setEngine(saved); return; } catch (_) {}
+      final r = await _safe<dynamic>(_tts.setEngine(saved), timeout: const Duration(seconds: 4));
+      if (r != null) {
+        debugPrint('[TTS] engine set to saved: $saved');
+        // setEngine recreates native TTS — wait for re-init
+        _engineReady = false;
+        await _ensureBound(timeout: const Duration(seconds: 4));
+        return;
+      }
     }
     // Otherwise prefer Google TTS
-    try {
-      final engines = await _tts.getEngines;
-      if (engines is List && engines.isNotEmpty) {
-        String? chosen;
-        for (final e in engines) {
-          final s = e.toString();
-          if (s.toLowerCase().contains('google')) { chosen = s; break; }
-        }
-        chosen ??= engines.first.toString();
-        debugPrint('[TTS] selecting engine: $chosen');
-        try { await _tts.setEngine(chosen); } catch (_) {}
+    final engines = await _safe<dynamic>(_tts.getEngines, timeout: const Duration(seconds: 3));
+    if (engines is List && engines.isNotEmpty) {
+      String? chosen;
+      for (final e in engines) {
+        final s = e.toString();
+        if (s.toLowerCase().contains('google')) { chosen = s; break; }
       }
-    } catch (_) {}
+      chosen ??= engines.first.toString();
+      debugPrint('[TTS] selecting engine: $chosen');
+      final r = await _safe<dynamic>(_tts.setEngine(chosen), timeout: const Duration(seconds: 4));
+      if (r != null) {
+        _engineReady = false;
+        await _ensureBound(timeout: const Duration(seconds: 4));
+      }
+    } else {
+      debugPrint('[TTS] WARNING: no engines found');
+    }
   }
 
   Future<void> _applyConfig() async {
-    try { await _tts.setSpeechRate(_settings.speechRate); } catch (_) {}
-    try { await _tts.setPitch(_settings.pitch); } catch (_) {}
-    try { await _tts.setVolume(1.0); } catch (_) {}
+    await _safe(_tts.setSpeechRate(_settings.speechRate));
+    await _safe(_tts.setPitch(_settings.pitch));
+    await _safe(_tts.setVolume(1.0));
     // Language: use saved preference, or device locale, or fallback
     final loc = ui.PlatformDispatcher.instance.locale;
     final defaultTag = _localeToTag(loc);
-    try {
-      final saved = _settings.systemTtsLanguage;
-      final tag = saved.isNotEmpty ? saved : defaultTag;
-      final res = await _tts.isLanguageAvailable(tag);
-      if (res == true) {
-        await _tts.setLanguage(tag);
-      } else {
-        final zh = loc.languageCode.toLowerCase().startsWith('zh');
-        final fb = zh ? 'zh-CN' : 'en-US';
-        final ok = await _tts.isLanguageAvailable(fb);
-        if (ok == true) await _tts.setLanguage(fb);
-      }
-    } catch (_) {}
-    try { await _tts.awaitSpeakCompletion(true); } catch (_) {}
-    try { await _tts.awaitSynthCompletion(true); } catch (_) {}
-    try { await _tts.setQueueMode(1); } catch (_) {}
+    final saved = _settings.systemTtsLanguage;
+    final tag = saved.isNotEmpty ? saved : defaultTag;
+    final res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
+    if (res == true) {
+      await _safe(_tts.setLanguage(tag));
+    } else {
+      final zh = loc.languageCode.toLowerCase().startsWith('zh');
+      final fb = zh ? 'zh-CN' : 'en-US';
+      final ok = await _safe<dynamic>(_tts.isLanguageAvailable(fb));
+      if (ok == true) await _safe(_tts.setLanguage(fb));
+    }
+    // CRITICAL: use awaitSpeakCompletion(false) — speak returns immediately,
+    // completion is tracked via handlers. Prevents hang on broken engines.
+    await _safe(_tts.awaitSpeakCompletion(false));
+    await _safe(_tts.setQueueMode(1));
   }
 
   static String _localeToTag(ui.Locale l) {
@@ -187,59 +231,68 @@ class TtsService {
 
   Future<void> _recreateEngine() async {
     debugPrint('[TTS] recreating engine...');
-    try { await _tts.stop(); } catch (_) {}
+    await _safe(_tts.stop(), timeout: const Duration(seconds: 1));
     _engineReady = false;
     _tts = FlutterTts();
     _bindHandlers();
     await _kickEngine();
-    await _ensureBound(timeout: const Duration(seconds: 2));
-    await _selectEngine();
-    await _applyConfig();
+    final bound = await _ensureBound(timeout: const Duration(seconds: 4));
+    if (bound) {
+      await _selectEngine();
+      await _applyConfig();
+    }
+    debugPrint('[TTS] recreate done, engineReady=$_engineReady');
   }
 
   // ---- Public API: engines / languages ----
 
   Future<List<String>> getEngines() async {
-    await _ensureBound();
-    try {
-      final res = await _tts.getEngines;
-      if (res is List) return res.map((e) => e.toString()).toList();
-    } catch (_) {}
+    if (!_engineReady) await _ensureBound(timeout: const Duration(seconds: 3));
+    final res = await _safe<dynamic>(_tts.getEngines, timeout: const Duration(seconds: 3));
+    if (res is List && res.isNotEmpty) {
+      final engines = res.map((e) => e.toString()).toList();
+      debugPrint('[TTS] getEngines: $engines');
+      return engines;
+    }
+    debugPrint('[TTS] getEngines: empty or null');
     return const <String>[];
   }
 
   Future<List<String>> getLanguages() async {
-    await _ensureBound();
-    try {
-      final res = await _tts.getLanguages;
-      if (res is List) return res.map((e) => e.toString()).toList();
-    } catch (_) {}
+    if (!_engineReady) await _ensureBound(timeout: const Duration(seconds: 3));
+    final res = await _safe<dynamic>(_tts.getLanguages, timeout: const Duration(seconds: 3));
+    if (res is List) return res.map((e) => e.toString()).toList();
     return const <String>[];
   }
 
   Future<void> setEngineId(String id) async {
     _settings.systemTtsEngine = id;
-    try { await _tts.setEngine(id); } catch (_) {}
+    final r = await _safe<dynamic>(_tts.setEngine(id), timeout: const Duration(seconds: 4));
+    if (r != null) {
+      // setEngine recreates native TTS — wait for re-init
+      _engineReady = false;
+      await _ensureBound(timeout: const Duration(seconds: 4));
+    }
     await _applyConfig();
     debugPrint('[TTS] engine set to: $id');
   }
 
   Future<void> setLanguageTag(String tag) async {
     _settings.systemTtsLanguage = tag;
-    try { await _tts.setLanguage(tag); } catch (_) {}
+    await _safe(_tts.setLanguage(tag));
     debugPrint('[TTS] language set to: $tag');
   }
 
   Future<void> setRate(double rate) async {
     final r = rate.clamp(0.1, 1.0);
     _settings.speechRate = r;
-    try { await _tts.setSpeechRate(r); } catch (_) {}
+    await _safe(_tts.setSpeechRate(r));
   }
 
   Future<void> setPitch(double p) async {
     final v = p.clamp(0.5, 2.0);
     _settings.pitch = v;
-    try { await _tts.setPitch(v); } catch (_) {}
+    await _safe(_tts.setPitch(v));
   }
 
   // ---- Speak ----
@@ -274,23 +327,44 @@ class TtsService {
   }
 
   Future<bool> _trySpeak(String text) async {
-    await _ensureBound();
-    dynamic res;
-    try { res = await _tts.speak(text, focus: true); } catch (_) {}
-    if (_speakOk(res)) return true;
-
-    await _selectEngine();
-    for (int i = 0; i < 5; i++) {
-      await Future.delayed(const Duration(milliseconds: 180));
-      try { res = await _tts.speak(text, focus: true); } catch (_) {}
-      if (_speakOk(res)) return true;
+    if (!_engineReady) {
+      final bound = await _ensureBound(timeout: const Duration(seconds: 3));
+      if (!bound) {
+        debugPrint('[TTS] _trySpeak: engine not bound, aborting');
+        return false;
+      }
     }
 
-    await _recreateEngine();
-    for (int i = 0; i < 5; i++) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      try { res = await _tts.speak(text, focus: true); } catch (_) {}
+    // Attempt 1: direct speak (with timeout to prevent hang)
+    var res = await _safe<dynamic>(
+      _tts.speak(text, focus: true),
+      timeout: const Duration(seconds: 3),
+    );
+    if (_speakOk(res)) return true;
+    debugPrint('[TTS] _trySpeak: attempt 1 failed (res=$res)');
+
+    // Attempt 2: re-select engine + retries
+    await _selectEngine();
+    for (int i = 0; i < 3; i++) {
+      await Future.delayed(const Duration(milliseconds: 250));
+      res = await _safe<dynamic>(
+        _tts.speak(text, focus: true),
+        timeout: const Duration(seconds: 3),
+      );
       if (_speakOk(res)) return true;
+      debugPrint('[TTS] _trySpeak: selectEngine retry $i failed (res=$res)');
+    }
+
+    // Attempt 3: full engine recreate + retries
+    await _recreateEngine();
+    for (int i = 0; i < 3; i++) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      res = await _safe<dynamic>(
+        _tts.speak(text, focus: true),
+        timeout: const Duration(seconds: 3),
+      );
+      if (_speakOk(res)) return true;
+      debugPrint('[TTS] _trySpeak: recreate retry $i failed (res=$res)');
     }
     return false;
   }
@@ -463,12 +537,12 @@ class TtsService {
 
   Future<void> stop() async {
     _isSpeaking = false;
-    try { await _tts.stop(); } catch (_) {}
+    await _safe(_tts.stop(), timeout: const Duration(seconds: 2));
     await _audioPlayer?.stop();
   }
 
   Future<void> dispose() async {
-    try { await _tts.stop(); } catch (_) {}
+    await _safe(_tts.stop(), timeout: const Duration(seconds: 1));
     _audioPlayer?.dispose();
   }
 
