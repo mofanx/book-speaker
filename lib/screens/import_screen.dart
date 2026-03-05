@@ -1,0 +1,187 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import '../models/lesson.dart';
+import '../services/ocr_service.dart';
+import '../services/storage_service.dart';
+
+class ImportScreen extends StatefulWidget {
+  const ImportScreen({super.key});
+
+  @override
+  State<ImportScreen> createState() => _ImportScreenState();
+}
+
+class _ImportScreenState extends State<ImportScreen> {
+  final _titleController = TextEditingController();
+  final _textController = TextEditingController();
+  final StorageService _storage = StorageService();
+  final OcrService _ocr = OcrService();
+  bool _isProcessing = false;
+  int _sentenceCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController.addListener(_updatePreview);
+  }
+
+  @override
+  void dispose() {
+    _textController.removeListener(_updatePreview);
+    _titleController.dispose();
+    _textController.dispose();
+    _ocr.dispose();
+    super.dispose();
+  }
+
+  void _updatePreview() {
+    final text = _textController.text.trim();
+    final count =
+        text.isEmpty ? 0 : Lesson.parseText(text).length;
+    if (count != _sentenceCount) {
+      setState(() => _sentenceCount = count);
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: source);
+    if (image == null) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final text = await _ocr.recognizeText(File(image.path));
+      _textController.text = text;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('OCR failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final title = _titleController.text.trim();
+    final rawText = _textController.text.trim();
+
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a title')),
+      );
+      return;
+    }
+    if (rawText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter or import some text')),
+      );
+      return;
+    }
+
+    final sentences = Lesson.parseText(rawText);
+    if (sentences.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No sentences found in text')),
+      );
+      return;
+    }
+
+    final lesson = Lesson(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      title: title,
+      sentences: sentences,
+      createdAt: DateTime.now(),
+    );
+
+    await _storage.saveLesson(lesson);
+    if (mounted) {
+      Navigator.pop(context, true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Import Lesson'),
+        actions: [
+          TextButton.icon(
+            onPressed: _isProcessing ? null : _save,
+            icon: const Icon(Icons.check),
+            label: const Text('Save'),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: 'Lesson Title',
+                hintText: 'e.g. Unit 3 - At the Zoo',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.title),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _pickImage(ImageSource.camera),
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('Take Photo'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _pickImage(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text('From Gallery'),
+                  ),
+                ),
+              ],
+            ),
+            if (_isProcessing) ...[
+              const SizedBox(height: 16),
+              const Center(child: CircularProgressIndicator()),
+              const SizedBox(height: 8),
+              const Center(child: Text('Recognizing text...')),
+            ],
+            const SizedBox(height: 16),
+            const Text('Or paste dialogue text below:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _textController,
+              maxLines: 15,
+              decoration: const InputDecoration(
+                hintText:
+                    'A: Hello! What\'s your name?\nB: My name is Mike.\nA: Nice to meet you!',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_sentenceCount > 0)
+              Text(
+                '$_sentenceCount sentences detected',
+                style: TextStyle(color: Colors.green[700]),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

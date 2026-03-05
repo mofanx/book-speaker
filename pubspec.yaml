@@ -1,0 +1,25 @@
+name: book_speaker
+description: English reading assistant for children - tap any sentence to hear it spoken aloud.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  flutter_tts: ^4.0.2
+  google_mlkit_text_recognition: ^0.13.0
+  image_picker: ^1.1.2
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
