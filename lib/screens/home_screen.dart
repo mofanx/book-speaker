@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/lesson.dart';
-import '../services/storage_service.dart';
+import '../services/service_locator.dart';
 import 'import_screen.dart';
 import 'reader_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,7 +13,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final StorageService _storage = StorageService();
   List<Lesson> _lessons = [];
   bool _isLoading = true;
 
@@ -23,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadLessons() async {
-    final lessons = await _storage.getAllLessons();
+    final lessons = await storageService.getAllLessons();
     setState(() {
       _lessons = lessons;
       _isLoading = false;
@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (confirm == true) {
-      await _storage.deleteLesson(lesson.id);
+      await storageService.deleteLesson(lesson.id);
       _loadLessons();
     }
   }
@@ -61,6 +61,19 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Book Speaker'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+              setState(() {});
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -112,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ReaderScreen(lesson: lesson),
                             ),
                           );
+                          _loadLessons();
                         },
                       ),
                     );

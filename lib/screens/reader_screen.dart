@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/lesson.dart';
 import '../services/tts_service.dart';
+import '../services/service_locator.dart';
 
 enum PlayMode { single, continuous, loop }
 
@@ -14,15 +15,23 @@ class ReaderScreen extends StatefulWidget {
 }
 
 class _ReaderScreenState extends State<ReaderScreen> {
-  final TtsService _tts = TtsService();
+  late final TtsService _tts;
+  late List<Sentence> _sentences;
   int _currentIndex = -1;
   bool _isPlaying = false;
   PlayMode _playMode = PlayMode.single;
   double _speechRate = 0.4;
 
+  // Edit mode
+  bool _isEditMode = false;
+  final Set<int> _selectedIndices = {};
+
   @override
   void initState() {
     super.initState();
+    _sentences = List.from(widget.lesson.sentences);
+    _tts = TtsService(settingsService);
+    _speechRate = settingsService.speechRate;
     _tts.onComplete = () => _onSpeechComplete();
     _tts.onStart = () {
       if (mounted) setState(() => _isPlaying = true);
@@ -35,22 +44,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
     super.dispose();
   }
 
+  // ---- TTS Playback ----
+
   void _onSpeechComplete() {
     if (!mounted) return;
-
     switch (_playMode) {
       case PlayMode.single:
         setState(() => _isPlaying = false);
         break;
       case PlayMode.continuous:
-        if (_currentIndex < widget.lesson.sentences.length - 1) {
+        if (_currentIndex < _sentences.length - 1) {
           _speakAt(_currentIndex + 1);
         } else {
           setState(() => _isPlaying = false);
         }
         break;
       case PlayMode.loop:
-        if (_currentIndex < widget.lesson.sentences.length - 1) {
+        if (_currentIndex < _sentences.length - 1) {
           _speakAt(_currentIndex + 1);
         } else {
           _speakAt(0);
@@ -64,7 +74,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _currentIndex = index;
       _isPlaying = true;
     });
-    await _tts.speak(widget.lesson.sentences[index].text);
+    await _tts.speak(_sentences[index].text);
   }
 
   Future<void> _stop() async {
@@ -77,21 +87,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
       await _stop();
     } else {
       setState(() => _playMode = PlayMode.continuous);
-      final startIndex = _currentIndex < 0 ? 0 : _currentIndex;
-      _speakAt(startIndex);
+      _speakAt(_currentIndex < 0 ? 0 : _currentIndex);
     }
   }
 
   void _previous() {
-    if (_currentIndex > 0) {
-      _speakAt(_currentIndex - 1);
-    }
+    if (_currentIndex > 0) _speakAt(_currentIndex - 1);
   }
 
   void _next() {
-    if (_currentIndex < widget.lesson.sentences.length - 1) {
-      _speakAt(_currentIndex + 1);
-    }
+    if (_currentIndex < _sentences.length - 1) _speakAt(_currentIndex + 1);
   }
 
   Future<void> _changeRate(double rate) async {
@@ -99,9 +104,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await _tts.setRate(rate);
   }
 
-  String _rateLabel(double rate) {
-    return '${(rate * 2).toStringAsFixed(1)}x';
-  }
+  String _rateLabel(double rate) => '${(rate * 2).toStringAsFixed(1)}x';
 
   IconData _playModeIcon() {
     switch (_playMode) {
@@ -114,14 +117,265 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
+  // ---- Edit Mode ----
+
+  void _toggleEditMode() {
+    if (_isPlaying) _stop();
+    setState(() {
+      _isEditMode = !_isEditMode;
+      _selectedIndices.clear();
+    });
+  }
+
+  void _toggleSelection(int index) {
+    setState(() {
+      if (_selectedIndices.contains(index)) {
+        _selectedIndices.remove(index);
+      } else {
+        _selectedIndices.add(index);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      if (_selectedIndices.length == _sentences.length) {
+        _selectedIndices.clear();
+      } else {
+        _selectedIndices.addAll(List.generate(_sentences.length, (i) => i));
+      }
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedIndices.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Sentences'),
+        content: Text('Delete ${_selectedIndices.length} sentence(s)?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:
+                  const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final sorted = _selectedIndices.toList()
+        ..sort((a, b) => b.compareTo(a));
+      for (final idx in sorted) {
+        _sentences.removeAt(idx);
+      }
+      _selectedIndices.clear();
+      _currentIndex = -1;
+      await _saveChanges();
+      setState(() {});
+    }
+  }
+
+  Future<void> _deleteSingle(int index) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Sentence'),
+        content: const Text('Delete this sentence?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:
+                  const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      _sentences.removeAt(index);
+      if (_currentIndex >= _sentences.length) _currentIndex = -1;
+      await _saveChanges();
+      setState(() {});
+    }
+  }
+
+  Future<void> _editSentence(int index) async {
+    final sentence = _sentences[index];
+    final textCtrl = TextEditingController(text: sentence.text);
+    final speakerCtrl = TextEditingController(text: sentence.speaker ?? '');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Sentence'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: speakerCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Speaker (optional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Text',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final text = textCtrl.text.trim();
+      if (text.isNotEmpty) {
+        _sentences[index] = Sentence(
+          id: sentence.id,
+          text: text,
+          speaker:
+              speakerCtrl.text.trim().isEmpty ? null : speakerCtrl.text.trim(),
+        );
+        await _saveChanges();
+        setState(() {});
+      }
+    }
+    textCtrl.dispose();
+    speakerCtrl.dispose();
+  }
+
+  Future<void> _addSentence() async {
+    final textCtrl = TextEditingController();
+    final speakerCtrl = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Sentence'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: speakerCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Speaker (optional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textCtrl,
+              maxLines: 3,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Text',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Add')),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final text = textCtrl.text.trim();
+      if (text.isNotEmpty) {
+        _sentences.add(Sentence(
+          text: text,
+          speaker:
+              speakerCtrl.text.trim().isEmpty ? null : speakerCtrl.text.trim(),
+        ));
+        await _saveChanges();
+        setState(() {});
+      }
+    }
+    textCtrl.dispose();
+    speakerCtrl.dispose();
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _sentences.removeAt(oldIndex);
+      _sentences.insert(newIndex, item);
+    });
+    _saveChanges();
+  }
+
+  Future<void> _saveChanges() async {
+    final updated = Lesson(
+      id: widget.lesson.id,
+      title: widget.lesson.title,
+      sentences: _sentences,
+      createdAt: widget.lesson.createdAt,
+    );
+    await storageService.saveLesson(updated);
+  }
+
+  // ---- Build ----
+
   @override
   Widget build(BuildContext context) {
-    final sentences = widget.lesson.sentences;
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.lesson.title),
-        actions: [
+      appBar: _buildAppBar(),
+      body: Column(
+        children: [
+          Expanded(
+              child: _isEditMode ? _buildEditList() : _buildPlayList()),
+          if (!_isEditMode) _buildControlBar(),
+        ],
+      ),
+      floatingActionButton: _isEditMode
+          ? FloatingActionButton(
+              onPressed: _addSentence, child: const Icon(Icons.add))
+          : null,
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: Text(widget.lesson.title),
+      actions: [
+        if (_isEditMode) ...[
+          TextButton(
+            onPressed: _selectAll,
+            child: Text(_selectedIndices.length == _sentences.length
+                ? 'Deselect'
+                : 'Select All'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            tooltip: 'Delete selected',
+            onPressed: _selectedIndices.isNotEmpty ? _deleteSelected : null,
+          ),
+        ] else
           PopupMenuButton<PlayMode>(
             icon: Icon(_playModeIcon()),
             tooltip: 'Play mode',
@@ -133,179 +387,245 @@ class _ReaderScreenState extends State<ReaderScreen> {
               _buildModeItem(PlayMode.loop, Icons.repeat, 'Loop All'),
             ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // ---- Sentence List ----
-          Expanded(
-            child: ListView.builder(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: sentences.length,
-              itemBuilder: (context, index) {
-                final sentence = sentences[index];
-                final isActive = index == _currentIndex;
+        IconButton(
+          icon: Icon(_isEditMode ? Icons.check : Icons.edit_note),
+          tooltip: _isEditMode ? 'Done' : 'Edit',
+          onPressed: _toggleEditMode,
+        ),
+      ],
+    );
+  }
 
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _playMode = PlayMode.single);
-                    _speakAt(index);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? Colors.blue.shade50
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color:
-                            isActive ? Colors.blue : Colors.grey.shade200,
-                        width: isActive ? 2 : 1,
-                      ),
-                      boxShadow: isActive
-                          ? [
-                              BoxShadow(
-                                color: Colors.blue.withValues(alpha: 0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              )
-                            ]
-                          : [],
-                    ),
-                    child: Row(
-                      children: [
-                        // Play indicator
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: isActive && _isPlaying
-                              ? const Icon(Icons.volume_up,
-                                  color: Colors.blue,
-                                  size: 24,
-                                  key: ValueKey('playing'))
-                              : Icon(Icons.play_circle_outline,
-                                  color: Colors.grey[400],
-                                  size: 24,
-                                  key: const ValueKey('idle')),
-                        ),
-                        const SizedBox(width: 12),
-                        // Sentence text
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (sentence.speaker != null)
-                                Text(
-                                  sentence.speaker!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue[700],
-                                  ),
-                                ),
-                              Text(
-                                sentence.text,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  height: 1.5,
-                                  color: isActive
-                                      ? Colors.blue[900]
-                                      : Colors.black87,
-                                  fontWeight: isActive
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ],
+  // ---- Play Mode List ----
+
+  Widget _buildPlayList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: _sentences.length,
+      itemBuilder: (context, index) {
+        final sentence = _sentences[index];
+        final isActive = index == _currentIndex;
+
+        return GestureDetector(
+          onTap: () {
+            setState(() => _playMode = PlayMode.single);
+            _speakAt(index);
+          },
+          onLongPress: _toggleEditMode,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isActive ? Colors.blue.shade50 : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isActive ? Colors.blue : Colors.grey.shade200,
+                width: isActive ? 2 : 1,
+              ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      )
+                    ]
+                  : [],
+            ),
+            child: Row(
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: isActive && _isPlaying
+                      ? const Icon(Icons.volume_up,
+                          color: Colors.blue,
+                          size: 24,
+                          key: ValueKey('playing'))
+                      : Icon(Icons.play_circle_outline,
+                          color: Colors.grey[400],
+                          size: 24,
+                          key: const ValueKey('idle')),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (sentence.speaker != null)
+                        Text(
+                          sentence.speaker!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700],
                           ),
                         ),
+                      Text(
+                        sentence.text,
+                        style: TextStyle(
+                          fontSize: 18,
+                          height: 1.5,
+                          color:
+                              isActive ? Colors.blue[900] : Colors.black87,
+                          fontWeight:
+                              isActive ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---- Edit Mode List ----
+
+  Widget _buildEditList() {
+    return ReorderableListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: _sentences.length,
+      onReorder: _onReorder,
+      proxyDecorator: (child, index, animation) {
+        return Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(12),
+          child: child,
+        );
+      },
+      itemBuilder: (context, index) {
+        final sentence = _sentences[index];
+        final isSelected = _selectedIndices.contains(index);
+
+        return Card(
+          key: ValueKey(sentence.id),
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _editSentence(index),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => _toggleSelection(index),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (sentence.speaker != null)
+                          Text(sentence.speaker!,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue[700],
+                                  fontWeight: FontWeight.bold)),
+                        Text(sentence.text,
+                            style: const TextStyle(
+                                fontSize: 16, color: Colors.black87)),
                       ],
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-
-          // ---- Bottom Control Bar ----
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                )
-              ],
-            ),
-            child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Speed slider
-                  Row(
-                    children: [
-                      const Icon(Icons.speed, size: 20),
-                      const SizedBox(width: 8),
-                      Text(_rateLabel(_speechRate),
-                          style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500)),
-                      Expanded(
-                        child: Slider(
-                          value: _speechRate,
-                          min: 0.1,
-                          max: 1.0,
-                          divisions: 9,
-                          label: _rateLabel(_speechRate),
-                          onChanged: _changeRate,
-                        ),
-                      ),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20),
+                    onPressed: () => _editSentence(index),
                   ),
-                  // Playback controls
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        iconSize: 36,
-                        onPressed: _currentIndex > 0 ? _previous : null,
-                        icon: const Icon(Icons.skip_previous),
-                      ),
-                      const SizedBox(width: 16),
-                      FilledButton.icon(
-                        onPressed: _playAll,
-                        icon: Icon(
-                            _isPlaying ? Icons.stop : Icons.play_arrow),
-                        label:
-                            Text(_isPlaying ? 'Stop' : 'Play All'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      IconButton(
-                        iconSize: 36,
-                        onPressed:
-                            _currentIndex < sentences.length - 1
-                                ? _next
-                                : null,
-                        icon: const Icon(Icons.skip_next),
-                      ),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline,
+                        size: 20, color: Colors.red),
+                    onPressed: () => _deleteSingle(index),
+                  ),
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.drag_handle, color: Colors.grey),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  // ---- Bottom Control Bar ----
+
+  Widget _buildControlBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          )
         ],
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.speed, size: 20),
+                const SizedBox(width: 8),
+                Text(_rateLabel(_speechRate),
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w500)),
+                Expanded(
+                  child: Slider(
+                    value: _speechRate,
+                    min: 0.1,
+                    max: 1.0,
+                    divisions: 9,
+                    label: _rateLabel(_speechRate),
+                    onChanged: _changeRate,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  iconSize: 36,
+                  onPressed: _currentIndex > 0 ? _previous : null,
+                  icon: const Icon(Icons.skip_previous),
+                ),
+                const SizedBox(width: 16),
+                FilledButton.icon(
+                  onPressed: _playAll,
+                  icon: Icon(_isPlaying ? Icons.stop : Icons.play_arrow),
+                  label: Text(_isPlaying ? 'Stop' : 'Play All'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                IconButton(
+                  iconSize: 36,
+                  onPressed: _currentIndex < _sentences.length - 1
+                      ? _next
+                      : null,
+                  icon: const Icon(Icons.skip_next),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -316,14 +636,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
       value: mode,
       child: Row(
         children: [
-          Icon(icon,
-              color: _playMode == mode ? Colors.blue : Colors.grey),
+          Icon(icon, color: _playMode == mode ? Colors.blue : Colors.grey),
           const SizedBox(width: 8),
           Text(label,
               style: TextStyle(
-                fontWeight: _playMode == mode
-                    ? FontWeight.bold
-                    : FontWeight.normal,
+                fontWeight:
+                    _playMode == mode ? FontWeight.bold : FontWeight.normal,
               )),
         ],
       ),

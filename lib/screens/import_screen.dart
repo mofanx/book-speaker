@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/lesson.dart';
 import '../services/ocr_service.dart';
-import '../services/storage_service.dart';
+import '../services/service_locator.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key});
@@ -15,14 +15,15 @@ class ImportScreen extends StatefulWidget {
 class _ImportScreenState extends State<ImportScreen> {
   final _titleController = TextEditingController();
   final _textController = TextEditingController();
-  final StorageService _storage = StorageService();
-  final OcrService _ocr = OcrService();
+  late final OcrService _ocr;
   bool _isProcessing = false;
+  bool _isOptimizing = false;
   int _sentenceCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _ocr = OcrService(settingsService, llmService);
     _textController.addListener(_updatePreview);
   }
 
@@ -37,8 +38,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
   void _updatePreview() {
     final text = _textController.text.trim();
-    final count =
-        text.isEmpty ? 0 : Lesson.parseText(text).length;
+    final count = text.isEmpty ? 0 : Lesson.parseText(text).length;
     if (count != _sentenceCount) {
       setState(() => _sentenceCount = count);
     }
@@ -61,6 +61,30 @@ class _ImportScreenState extends State<ImportScreen> {
       }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _optimizeText() async {
+    final rawText = _textController.text.trim();
+    if (rawText.isEmpty) return;
+
+    setState(() => _isOptimizing = true);
+    try {
+      final optimized = await llmService.optimizeText(rawText);
+      _textController.text = optimized;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Text optimized successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Optimization failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isOptimizing = false);
     }
   }
 
@@ -96,7 +120,7 @@ class _ImportScreenState extends State<ImportScreen> {
       createdAt: DateTime.now(),
     );
 
-    await _storage.saveLesson(lesson);
+    await storageService.saveLesson(lesson);
     if (mounted) {
       Navigator.pop(context, true);
     }
@@ -104,12 +128,14 @@ class _ImportScreenState extends State<ImportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final showOptimize = settingsService.enableTextOptimization;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Import Lesson'),
         actions: [
           TextButton.icon(
-            onPressed: _isProcessing ? null : _save,
+            onPressed: (_isProcessing || _isOptimizing) ? null : _save,
             icon: const Icon(Icons.check),
             label: const Text('Save'),
           ),
@@ -160,8 +186,28 @@ class _ImportScreenState extends State<ImportScreen> {
               const Center(child: Text('Recognizing text...')),
             ],
             const SizedBox(height: 16),
-            const Text('Or paste dialogue text below:',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Or paste dialogue text below:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                if (showOptimize)
+                  TextButton.icon(
+                    onPressed: (_isOptimizing ||
+                            _textController.text.trim().isEmpty)
+                        ? null
+                        : _optimizeText,
+                    icon: _isOptimizing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.auto_fix_high, size: 18),
+                    label: Text(_isOptimizing ? 'Optimizing...' : 'AI Optimize'),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _textController,

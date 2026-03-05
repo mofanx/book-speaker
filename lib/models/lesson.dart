@@ -1,17 +1,25 @@
 import 'dart:convert';
 
 class Sentence {
+  final String id;
   final String text;
   final String? speaker;
 
-  Sentence({required this.text, this.speaker});
+  Sentence({String? id, required this.text, this.speaker})
+      : id = id ?? _generateId();
+
+  static int _counter = 0;
+  static String _generateId() =>
+      '${DateTime.now().microsecondsSinceEpoch}_${_counter++}';
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'text': text,
         if (speaker != null) 'speaker': speaker,
       };
 
   factory Sentence.fromJson(Map<String, dynamic> json) => Sentence(
+        id: json['id'] as String?,
         text: json['text'] as String,
         speaker: json['speaker'] as String?,
       );
