@@ -176,8 +176,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (id) => setState(() => s.ttsProviderId = id),
             ),
             if (s.ttsMode == TtsMode.llm)
-              _field(t('tts_model'), _ttsModelCtrl,
-                  (v) => s.ttsModel = v, t('tts_model_hint')),
+              _modelSelector(
+                label: t('tts_model'), 
+                selectedId: s.ttsModel,
+                providerId: s.ttsProviderId,
+                providers: providers,
+                onChanged: (v) => setState(() => s.ttsModel = v), 
+                hint: t('tts_model_hint')
+              ),
             _field(
                 t('tts_voice'),
                 _ttsVoiceCtrl,
@@ -248,8 +254,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               providers: providers,
               onChanged: (id) => setState(() => s.ocrProviderId = id),
             ),
-            _field(t('ocr_model'), _ocrModelCtrl, (v) => s.ocrModel = v,
-                t('ocr_model_hint')),
+            _modelSelector(
+              label: t('ocr_model'), 
+              selectedId: s.ocrModel, 
+              providerId: s.ocrProviderId,
+              providers: providers,
+              onChanged: (v) => setState(() => s.ocrModel = v),
+              hint: t('ocr_model_hint')
+            ),
           ],
           const Divider(),
 
@@ -268,8 +280,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               providers: providers,
               onChanged: (id) => setState(() => s.textOptProviderId = id),
             ),
-            _field(t('text_opt_model'), _textOptModelCtrl,
-                (v) => s.textOptModel = v, t('text_opt_model_hint')),
+            _modelSelector(
+              label: t('text_opt_model'), 
+              selectedId: s.textOptModel,
+              providerId: s.textOptProviderId,
+              providers: providers,
+              onChanged: (v) => setState(() => s.textOptModel = v), 
+              hint: t('text_opt_model_hint')
+            ),
           ],
           const Divider(),
 
@@ -790,6 +808,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
           isDense: true,
         ),
         onChanged: onChanged,
+      ),
+    );
+  }
+
+  Widget _modelSelector({
+    required String label,
+    required String selectedId,
+    required String providerId,
+    required List<AiProvider> providers,
+    required ValueChanged<String> onChanged,
+    required String hint,
+  }) {
+    final provider = providers.where((p) => p.id == providerId).firstOrNull;
+    
+    // If provider not found or has no favorited models, fallback to text field
+    if (provider == null || provider.favoriteModels.isEmpty) {
+      return _field(
+        label, 
+        TextEditingController(text: selectedId), 
+        onChanged, 
+        hint
+      );
+    }
+
+    // Ensure selectedId is in the list or add it temporarily for the dropdown
+    final models = provider.favoriteModels.toList();
+    if (selectedId.isNotEmpty && !models.contains(selectedId)) {
+      models.insert(0, selectedId);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: DropdownButtonFormField<String>(
+        value: selectedId.isNotEmpty ? selectedId : null,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+        items: models.map((m) =>
+            DropdownMenuItem(value: m, child: Text(m))).toList(),
+        onChanged: (v) => onChanged(v ?? ''),
       ),
     );
   }

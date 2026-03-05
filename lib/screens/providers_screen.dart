@@ -138,7 +138,10 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
   late TextEditingController _keyCtrl;
   late TextEditingController _urlCtrl;
   bool _isTesting = false;
+  bool _isFetchingModels = false;
   String? _testResult;
+  List<String> _models = [];
+  Set<String> _favoriteModels = {};
 
   @override
   void initState() {
@@ -148,6 +151,8 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
     _nameCtrl = TextEditingController(text: p?.name ?? _type.label);
     _keyCtrl = TextEditingController(text: p?.apiKey ?? '');
     _urlCtrl = TextEditingController(text: p?.baseUrl ?? _type.defaultBaseUrl);
+    _models = p?.models.toList() ?? [];
+    _favoriteModels = p?.favoriteModels.toSet() ?? {};
   }
 
   @override
@@ -177,9 +182,49 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
       type: _type,
       apiKey: _keyCtrl.text.trim(),
       baseUrl: _urlCtrl.text.trim(),
+      models: _models,
+      favoriteModels: _favoriteModels.toList(),
     );
     await settingsService.saveProvider(provider);
     if (mounted) Navigator.pop(context, true);
+  }
+
+  Future<void> _fetchModels() async {
+    if (_keyCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('provider_key_required'))));
+      return;
+    }
+
+    setState(() {
+      _isFetchingModels = true;
+    });
+
+    final tmpProvider = AiProvider(
+      id: 'test',
+      name: 'test',
+      type: _type,
+      apiKey: _keyCtrl.text.trim(),
+      baseUrl: _urlCtrl.text.trim(),
+    );
+
+    final models = await llmService.fetchModels(tmpProvider);
+    
+    if (mounted) {
+      setState(() {
+        _isFetchingModels = false;
+        if (models.isNotEmpty) {
+          _models = models;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully fetched ${models.length} models'))
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to fetch models or no models found'))
+          );
+        }
+      });
+    }
   }
 
   Future<void> _test() async {
@@ -298,6 +343,71 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
             ),
           ),
           const SizedBox(height: 24),
+
+          // Models section
+          if (_type != ProviderType.azure) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Available Models',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                TextButton.icon(
+                  onPressed: _isFetchingModels ? null : _fetchModels,
+                  icon: _isFetchingModels
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.cloud_download),
+                  label: const Text('Fetch Models'),
+                ),
+              ],
+            ),
+            if (_models.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text('No models fetched yet.',
+                    style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+              )
+            else
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _models.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final model = _models[index];
+                    final isFav = _favoriteModels.contains(model);
+                    return ListTile(
+                      dense: true,
+                      title: Text(model, style: const TextStyle(fontSize: 14)),
+                      trailing: IconButton(
+                        icon: Icon(
+                          isFav ? Icons.star : Icons.star_border,
+                          color: isFav ? Colors.orange : Colors.grey,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            if (isFav) {
+                              _favoriteModels.remove(model);
+                            } else {
+                              _favoriteModels.add(model);
+                            }
+                          });
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 24),
+          ],
 
           // Test button
           FilledButton.icon(

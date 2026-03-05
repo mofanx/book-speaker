@@ -10,6 +10,67 @@ class LlmService {
 
   LlmService(this._settings);
 
+  // ---- Fetch Models ----
+
+  Future<List<String>> fetchModels(AiProvider provider) async {
+    try {
+      if (provider.type == ProviderType.google) {
+        return await _fetchGeminiModels(provider);
+      }
+      return await _fetchOpenAiCompatibleModels(provider);
+    } catch (e) {
+      debugPrint('[LLM] fetch models error: $e');
+      return [];
+    }
+  }
+
+  Future<List<String>> _fetchOpenAiCompatibleModels(AiProvider provider) async {
+    final baseUrl = provider.baseUrl.isNotEmpty
+        ? provider.baseUrl.replaceAll(RegExp(r'/$'), '')
+        : 'https://api.openai.com/v1';
+
+    String url;
+    Map<String, String> headers;
+
+    if (provider.type == ProviderType.azure) {
+      // Azure doesn't have a standard models endpoint in the same way,
+      // it depends on deployments. Returning empty list to let user type it manually.
+      return [];
+    } else {
+      url = '$baseUrl/models';
+      headers = {
+        'Authorization': 'Bearer ${provider.apiKey}',
+      };
+    }
+
+    final response = await http.get(Uri.parse(url), headers: headers);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch models ${response.statusCode}');
+    }
+    final data = jsonDecode(response.body);
+    final models = data['data'] as List;
+    return models.map((e) => e['id'] as String).toList();
+  }
+
+  Future<List<String>> _fetchGeminiModels(AiProvider provider) async {
+    final baseUrl = provider.baseUrl.isNotEmpty
+        ? provider.baseUrl.replaceAll(RegExp(r'/$'), '')
+        : 'https://generativelanguage.googleapis.com/v1beta';
+    final url = '$baseUrl/models?key=${provider.apiKey}';
+
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch Gemini models ${response.statusCode}');
+    }
+    final data = jsonDecode(response.body);
+    final models = data['models'] as List;
+    // Format is "models/gemini-pro", strip the "models/" prefix
+    return models.map((e) {
+      final name = e['name'] as String;
+      return name.replaceFirst('models/', '');
+    }).toList();
+  }
+
   // ---- Generic call with explicit provider/model ----
 
   Future<String> call({

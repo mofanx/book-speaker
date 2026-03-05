@@ -36,6 +36,8 @@ class AiProvider {
   ProviderType type;
   String apiKey;
   String baseUrl;
+  List<String> models;
+  List<String> favoriteModels;
 
   AiProvider({
     required this.id,
@@ -43,6 +45,8 @@ class AiProvider {
     required this.type,
     this.apiKey = '',
     String? baseUrl,
+    this.models = const [],
+    this.favoriteModels = const [],
   }) : baseUrl = baseUrl ?? type.defaultBaseUrl;
 
   Map<String, dynamic> toJson() => {
@@ -51,6 +55,8 @@ class AiProvider {
         'type': type.index,
         'apiKey': apiKey,
         'baseUrl': baseUrl,
+        'models': models,
+        'favoriteModels': favoriteModels,
       };
 
   factory AiProvider.fromJson(Map<String, dynamic> json) {
@@ -61,6 +67,8 @@ class AiProvider {
       type: type,
       apiKey: json['apiKey'] as String? ?? '',
       baseUrl: json['baseUrl'] as String? ?? type.defaultBaseUrl,
+      models: (json['models'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      favoriteModels: (json['favoriteModels'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 
