@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/ai_provider.dart';
 import '../models/settings.dart';
@@ -19,6 +20,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _ocrModelCtrl;
   late TextEditingController _textOptModelCtrl;
   bool _ttsTesting = false;
+  String? _ttsTestResult;
+
+  // System TTS engine info
+  List<String> _ttsEngines = [];
+  String? _selectedEngine;
 
   @override
   void initState() {
@@ -28,6 +34,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl = TextEditingController(text: s.ttsModel);
     _ocrModelCtrl = TextEditingController(text: s.ocrModel);
     _textOptModelCtrl = TextEditingController(text: s.textOptModel);
+    _loadTtsEngines();
+  }
+
+  Future<void> _loadTtsEngines() async {
+    final tts = TtsService(settingsService);
+    await tts.init();
+    final engines = await tts.getEngines();
+    if (mounted) {
+      setState(() => _ttsEngines = engines);
+    }
+    await tts.dispose();
   }
 
   @override
@@ -116,6 +133,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
             groupValue: s.ttsMode,
             onChanged: (v) => setState(() => s.ttsMode = v),
           ),
+
+          // System TTS: show engines + open system settings
+          if (s.ttsMode == TtsMode.system) ...[
+            if (_ttsEngines.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: DropdownButtonFormField<String>(
+                  value: _selectedEngine,
+                  decoration: InputDecoration(
+                    labelText: t('tts_engine'),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    DropdownMenuItem<String>(
+                      value: null,
+                      child: Text(t('tts_engine_default')),
+                    ),
+                    ..._ttsEngines.map((e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(
+                            e.replaceAll('com.google.android.tts', 'Google TTS')
+                                .replaceAll('com.xiaomi.mibrain.speech', 'Xiaomi TTS')
+                                .replaceAll('com.iflytek.speechcloud', 'iFlytek TTS'),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        )),
+                  ],
+                  onChanged: (v) {
+                    setState(() => _selectedEngine = v);
+                  },
+                ),
+              ),
+            if (_ttsEngines.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(t('tts_no_engine'),
+                    style: TextStyle(color: Colors.orange[700], fontSize: 13)),
+              ),
+            if (Platform.isAndroid)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await TtsService.openSystemTtsSettings();
+                    // Reload engines when user comes back
+                    await Future.delayed(const Duration(seconds: 1));
+                    _loadTtsEngines();
+                  },
+                  icon: const Icon(Icons.settings, size: 18),
+                  label: Text(t('tts_open_system_settings')),
+                ),
+              ),
+          ],
+
+          // Cloud / LLM TTS: show provider/model/voice
           if (s.ttsMode != TtsMode.system) ...[
             _providerSelector(
               label: t('tts_provider'),
@@ -134,6 +207,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ? t('tts_voice_hint_llm')
                     : t('tts_voice_hint_traditional')),
           ],
+
+          // Test TTS button + result
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: OutlinedButton.icon(
@@ -147,6 +222,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: Text(_ttsTesting ? t('testing') : t('tts_test')),
             ),
           ),
+          if (_ttsTestResult != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _ttsTestResult == t('success')
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _ttsTestResult!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _ttsTestResult == t('success')
+                        ? Colors.green.shade800
+                        : Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ),
           const Divider(),
 
           // =========== OCR ===========
@@ -202,7 +299,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Book Speaker'),
-            subtitle: Text('v1.1.0 — ${t('app_name')}'),
+            subtitle: Text('v1.2.0 — ${t('app_name')}'),
           ),
           const SizedBox(height: 32),
         ],
@@ -213,17 +310,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ---- TTS test ----
 
   Future<void> _testTts() async {
-    setState(() => _ttsTesting = true);
+    setState(() {
+      _ttsTesting = true;
+      _ttsTestResult = null;
+    });
+
     final tts = TtsService(settingsService);
     await tts.init();
+
+    // If user selected a specific engine, set it before testing
+    if (_selectedEngine != null && _selectedEngine!.isNotEmpty) {
+      await tts.setEngine(_selectedEngine!);
+      // Re-configure after engine change
+      await tts.init();
+    }
+
     final err = await tts.testSpeak();
-    await Future.delayed(const Duration(seconds: 2));
     await tts.dispose();
+
     if (mounted) {
-      setState(() => _ttsTesting = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(err == null ? t('success') : '${t('failed')}: $err'),
-      ));
+      setState(() {
+        _ttsTesting = false;
+        _ttsTestResult = err == null ? t('success') : err;
+      });
     }
   }
 
