@@ -45,6 +45,17 @@ jobs:
           # Set compileSdk to 36 (handles both = and without =)
           sed -i -E 's/compileSdk\s*=\s*(flutter\.compileSdkVersion|[0-9]+)/compileSdk = 36/' "$BUILD"
 
+          # Create ProGuard rules for google_mlkit (suppress unused language module warnings)
+          cat > android/app/proguard-rules.pro << 'RULES'
+          -dontwarn com.google.mlkit.vision.text.chinese.**
+          -dontwarn com.google.mlkit.vision.text.devanagari.**
+          -dontwarn com.google.mlkit.vision.text.japanese.**
+          -dontwarn com.google.mlkit.vision.text.korean.**
+          RULES
+
+          # Add proguardFiles reference into the release buildType
+          sed -i '/signingConfig.*debug/a\            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")' "$BUILD"
+
           echo "--- $SETTINGS ---"
           cat "$SETTINGS"
           echo "--- $BUILD ---"
