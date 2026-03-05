@@ -178,6 +178,23 @@ class TtsService {
         return;
       }
     }
+
+    // Try default engine first
+    try {
+      final defaultEngine = await _safe<dynamic>(_tts.getDefaultEngine);
+      if (defaultEngine != null && defaultEngine.toString().trim().isNotEmpty) {
+        debugPrint('[TTS] trying default engine: $defaultEngine');
+        final r = await _safe<dynamic>(_tts.setEngine(defaultEngine.toString()), timeout: const Duration(seconds: 4));
+        if (r != null) {
+          _engineReady = false;
+          await _ensureBound(timeout: const Duration(seconds: 4));
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('[TTS] getDefaultEngine error: $e');
+    }
+
     // Otherwise prefer Google TTS
     final engines = await _safe<dynamic>(_tts.getEngines, timeout: const Duration(seconds: 3));
     if (engines is List && engines.isNotEmpty) {
@@ -207,7 +224,14 @@ class TtsService {
     final defaultTag = _localeToTag(loc);
     final saved = _settings.systemTtsLanguage;
     final tag = saved.isNotEmpty ? saved : defaultTag;
-    final res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
+    
+    bool? res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
+    // Retry once if language not ready right after engine bind
+    if (res != true) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
+    }
+
     if (res == true) {
       await _safe(_tts.setLanguage(tag));
     } else {
@@ -345,6 +369,7 @@ class TtsService {
 
     // Attempt 2: re-select engine + retries
     await _selectEngine();
+    await _applyConfig();
     for (int i = 0; i < 3; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
       res = await _safe<dynamic>(
