@@ -1,5 +1,5 @@
 name: flutter_tts
-description: A flutter plugin for Text to Speech. Patched for Xiaomi HyperOS compatibility.
+description: A flutter plugin for Text to Speech.  This plugin is supported on iOS, macOS, Android, Web, & Windows.
 version: 4.2.3
 homepage: https://github.com/dlutton/flutter_tts
 
@@ -17,6 +17,5 @@ flutter:
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=1.22.0"
-
 dev_dependencies:
   lints: ^3.0.0

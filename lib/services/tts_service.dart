@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -11,24 +12,40 @@ import '../models/ai_provider.dart';
 import '../models/settings.dart';
 import 'settings_service.dart';
 
+/// Singleton TTS service. Uses ONE FlutterTts instance to avoid
+/// static MethodChannel handler competition (flutter_tts uses a
+/// static const MethodChannel — multiple FlutterTts instances
+/// overwrite each other's callbacks).
 class TtsService {
+  // ---- Singleton ----
+  static TtsService? _instance;
+  static TtsService instance(SettingsService settings) {
+    _instance ??= TtsService._(settings);
+    return _instance!;
+  }
+
   final SettingsService _settings;
-  FlutterTts? _systemTts;
+  late FlutterTts _tts;
   AudioPlayer? _audioPlayer;
   bool _isSpeaking = false;
   bool _engineReady = false;
   bool _initialized = false;
-  double _rate = 0.5;
+  String? _error;
 
   Function()? onComplete;
   Function()? onStart;
-
-  // For test: signals when speech starts or completes
   Completer<String?>? _testCompleter;
 
-  TtsService(this._settings) {
-    _rate = _settings.speechRate;
-  }
+  TtsService._(this._settings);
+
+  bool get isInitialized => _initialized;
+  bool get isSpeaking => _isSpeaking;
+  bool get engineReady => _engineReady;
+  String? get error => _error;
+  double get rate => _settings.speechRate;
+  double get pitch => _settings.pitch;
+  String get engineId => _settings.systemTtsEngine;
+  String get languageTag => _settings.systemTtsLanguage;
 
   /// Initialize system TTS engine. Safe to call multiple times.
   Future<void> init() async {
@@ -36,55 +53,55 @@ class TtsService {
     await _initSystemTts();
   }
 
-  // ---- Initialization (following Kelivo's proven pattern) ----
+  // ---- Initialization (Kelivo's proven pattern) ----
 
   Future<void> _initSystemTts() async {
     try {
-      _systemTts = FlutterTts();
+      _tts = FlutterTts();
       _bindHandlers();
-
-      // Kick the engine: querying triggers native TTS binding
       await _kickEngine();
-      // Poll until the engine is actually bound and responding
       await _ensureBound(timeout: const Duration(seconds: 5));
-      // Pick the best engine (prefer Google TTS)
       await _selectEngine();
-      // Apply speech config
       await _applyConfig();
-
       _initialized = true;
-      debugPrint('[TTS] system TTS initialized, rate=$_rate, engineReady=$_engineReady');
+      _error = null;
+      debugPrint('[TTS] initialized, engineReady=$_engineReady');
     } catch (e) {
       debugPrint('[TTS] init failed: $e');
+      _error = e.toString();
       _initialized = false;
     }
   }
 
   void _bindHandlers() {
-    _systemTts!.setStartHandler(() {
-      debugPrint('[TTS] >> onStart callback');
+    _tts.setStartHandler(() {
+      debugPrint('[TTS] >> onStart');
       _isSpeaking = true;
       onStart?.call();
       if (_testCompleter != null && !_testCompleter!.isCompleted) {
-        _testCompleter!.complete(null); // success
+        _testCompleter!.complete(null);
       }
     });
-
-    _systemTts!.setCompletionHandler(() {
-      debugPrint('[TTS] >> onComplete callback');
+    _tts.setCompletionHandler(() {
+      debugPrint('[TTS] >> onComplete');
       _isSpeaking = false;
       onComplete?.call();
     });
-
-    _systemTts!.setCancelHandler(() {
-      debugPrint('[TTS] >> onCancel callback');
+    _tts.setCancelHandler(() {
+      debugPrint('[TTS] >> onCancel');
       _isSpeaking = false;
       onComplete?.call();
     });
-
-    _systemTts!.setErrorHandler((msg) {
-      debugPrint('[TTS] >> onError callback: $msg');
+    _tts.setPauseHandler(() {
+      debugPrint('[TTS] >> onPause');
+    });
+    _tts.setContinueHandler(() {
+      debugPrint('[TTS] >> onContinue');
+    });
+    _tts.setErrorHandler((msg) {
+      debugPrint('[TTS] >> onError: $msg');
       _isSpeaking = false;
+      _error = msg;
       onComplete?.call();
       if (_testCompleter != null && !_testCompleter!.isCompleted) {
         _testCompleter!.complete('TTS error: $msg');
@@ -92,22 +109,20 @@ class TtsService {
     });
   }
 
-  /// Querying languages/engines triggers the native TTS service to bind.
   Future<void> _kickEngine() async {
-    try { await _systemTts!.getLanguages; } catch (_) {}
-    try { await _systemTts!.getEngines; } catch (_) {}
+    try { await _tts.getLanguages; } catch (_) {}
+    try { await _tts.getEngines; } catch (_) {}
   }
 
-  /// Poll until getLanguages returns non-null, confirming the engine is bound.
   Future<void> _ensureBound({Duration timeout = const Duration(seconds: 3)}) async {
     if (_engineReady) return;
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
-        final langs = await _systemTts!.getLanguages;
+        final langs = await _tts.getLanguages;
         if (langs != null) {
           _engineReady = true;
-          debugPrint('[TTS] engine bound successfully');
+          debugPrint('[TTS] engine bound');
           return;
         }
       } catch (_) {}
@@ -116,10 +131,15 @@ class TtsService {
     debugPrint('[TTS] WARNING: engine not bound after ${timeout.inSeconds}s');
   }
 
-  /// Pick the best TTS engine. Prefer Google TTS if available.
   Future<void> _selectEngine() async {
+    // If user has a saved engine preference, use it
+    final saved = _settings.systemTtsEngine;
+    if (saved.isNotEmpty) {
+      try { await _tts.setEngine(saved); return; } catch (_) {}
+    }
+    // Otherwise prefer Google TTS
     try {
-      final engines = await _systemTts!.getEngines;
+      final engines = await _tts.getEngines;
       if (engines is List && engines.isNotEmpty) {
         String? chosen;
         for (final e in engines) {
@@ -128,35 +148,48 @@ class TtsService {
         }
         chosen ??= engines.first.toString();
         debugPrint('[TTS] selecting engine: $chosen');
-        try { await _systemTts!.setEngine(chosen); } catch (_) {}
+        try { await _tts.setEngine(chosen); } catch (_) {}
       }
     } catch (_) {}
   }
 
-  /// Apply speech rate, pitch, volume, language, queue mode.
   Future<void> _applyConfig() async {
-    try { await _systemTts!.setSpeechRate(_rate); } catch (_) {}
-    try { await _systemTts!.setPitch(1.0); } catch (_) {}
-    try { await _systemTts!.setVolume(1.0); } catch (_) {}
-    // Set language
+    try { await _tts.setSpeechRate(_settings.speechRate); } catch (_) {}
+    try { await _tts.setPitch(_settings.pitch); } catch (_) {}
+    try { await _tts.setVolume(1.0); } catch (_) {}
+    // Language: use saved preference, or device locale, or fallback
+    final loc = ui.PlatformDispatcher.instance.locale;
+    final defaultTag = _localeToTag(loc);
     try {
-      final ok = await _systemTts!.isLanguageAvailable('en-US');
-      if (ok == true) {
-        await _systemTts!.setLanguage('en-US');
+      final saved = _settings.systemTtsLanguage;
+      final tag = saved.isNotEmpty ? saved : defaultTag;
+      final res = await _tts.isLanguageAvailable(tag);
+      if (res == true) {
+        await _tts.setLanguage(tag);
+      } else {
+        final zh = loc.languageCode.toLowerCase().startsWith('zh');
+        final fb = zh ? 'zh-CN' : 'en-US';
+        final ok = await _tts.isLanguageAvailable(fb);
+        if (ok == true) await _tts.setLanguage(fb);
       }
     } catch (_) {}
-    // Use awaitSpeakCompletion + QUEUE_ADD mode (Kelivo pattern)
-    // The patched native plugin handles reconnection, so this is safe
-    try { await _systemTts!.awaitSpeakCompletion(true); } catch (_) {}
-    try { await _systemTts!.setQueueMode(1); } catch (_) {}
+    try { await _tts.awaitSpeakCompletion(true); } catch (_) {}
+    try { await _tts.awaitSynthCompletion(true); } catch (_) {}
+    try { await _tts.setQueueMode(1); } catch (_) {}
   }
 
-  /// Recreate the entire FlutterTts instance and rebind everything.
+  static String _localeToTag(ui.Locale l) {
+    final lang = l.languageCode;
+    final country = l.countryCode;
+    if (country != null && country.isNotEmpty) return '$lang-$country';
+    return lang;
+  }
+
   Future<void> _recreateEngine() async {
     debugPrint('[TTS] recreating engine...');
-    try { await _systemTts!.stop(); } catch (_) {}
+    try { await _tts.stop(); } catch (_) {}
     _engineReady = false;
-    _systemTts = FlutterTts();
+    _tts = FlutterTts();
     _bindHandlers();
     await _kickEngine();
     await _ensureBound(timeout: const Duration(seconds: 2));
@@ -164,10 +197,53 @@ class TtsService {
     await _applyConfig();
   }
 
-  bool get isSpeaking => _isSpeaking;
-  double get rate => _rate;
+  // ---- Public API: engines / languages ----
 
-  /// Speak text using the currently configured TTS mode.
+  Future<List<String>> getEngines() async {
+    await _ensureBound();
+    try {
+      final res = await _tts.getEngines;
+      if (res is List) return res.map((e) => e.toString()).toList();
+    } catch (_) {}
+    return const <String>[];
+  }
+
+  Future<List<String>> getLanguages() async {
+    await _ensureBound();
+    try {
+      final res = await _tts.getLanguages;
+      if (res is List) return res.map((e) => e.toString()).toList();
+    } catch (_) {}
+    return const <String>[];
+  }
+
+  Future<void> setEngineId(String id) async {
+    _settings.systemTtsEngine = id;
+    try { await _tts.setEngine(id); } catch (_) {}
+    await _applyConfig();
+    debugPrint('[TTS] engine set to: $id');
+  }
+
+  Future<void> setLanguageTag(String tag) async {
+    _settings.systemTtsLanguage = tag;
+    try { await _tts.setLanguage(tag); } catch (_) {}
+    debugPrint('[TTS] language set to: $tag');
+  }
+
+  Future<void> setRate(double rate) async {
+    final r = rate.clamp(0.1, 1.0);
+    _settings.speechRate = r;
+    try { await _tts.setSpeechRate(r); } catch (_) {}
+  }
+
+  Future<void> setPitch(double p) async {
+    final v = p.clamp(0.5, 2.0);
+    _settings.pitch = v;
+    try { await _tts.setPitch(v); } catch (_) {}
+  }
+
+  // ---- Speak ----
+
   Future<void> speak(String text) async {
     await stop();
     switch (_settings.ttsMode) {
@@ -183,17 +259,9 @@ class TtsService {
     }
   }
 
-  // ---- System TTS with aggressive retry (Kelivo pattern) ----
-
   Future<void> _speakSystemWithRetry(String text) async {
-    if (_systemTts == null) {
-      debugPrint('[TTS] system not initialized');
-      onComplete?.call();
-      return;
-    }
     _isSpeaking = true;
     onStart?.call();
-
     final ok = await _trySpeak(text);
     if (!ok) {
       debugPrint('[TTS] all speak attempts failed');
@@ -205,27 +273,23 @@ class TtsService {
     }
   }
 
-  /// Try to speak with retries + engine recreation (Kelivo's _trySpeak pattern).
   Future<bool> _trySpeak(String text) async {
     await _ensureBound();
     dynamic res;
-    // First attempt
-    try { res = await _systemTts!.speak(text, focus: true); } catch (_) {}
+    try { res = await _tts.speak(text, focus: true); } catch (_) {}
     if (_speakOk(res)) return true;
 
-    // Retry with engine selection (5 attempts, 180ms apart)
     await _selectEngine();
     for (int i = 0; i < 5; i++) {
       await Future.delayed(const Duration(milliseconds: 180));
-      try { res = await _systemTts!.speak(text, focus: true); } catch (_) {}
+      try { res = await _tts.speak(text, focus: true); } catch (_) {}
       if (_speakOk(res)) return true;
     }
 
-    // Nuclear option: recreate engine entirely and retry (5 attempts, 200ms apart)
     await _recreateEngine();
     for (int i = 0; i < 5; i++) {
       await Future.delayed(const Duration(milliseconds: 200));
-      try { res = await _systemTts!.speak(text, focus: true); } catch (_) {}
+      try { res = await _tts.speak(text, focus: true); } catch (_) {}
       if (_speakOk(res)) return true;
     }
     return false;
@@ -278,7 +342,7 @@ class TtsService {
     final voice = _settings.ttsVoice.isNotEmpty
         ? _settings.ttsVoice
         : 'en-US-JennyNeural';
-    final ssmlRate = '${((_rate * 2) * 100).round()}%';
+    final ssmlRate = '${((rate * 2) * 100).round()}%';
 
     final ssml =
         '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
@@ -303,7 +367,7 @@ class TtsService {
     final voice = _settings.ttsVoice.isNotEmpty
         ? _settings.ttsVoice
         : 'en-US-Neural2-C';
-    final speedRate = (_rate * 2).clamp(0.25, 4.0);
+    final speedRate = (rate * 2).clamp(0.25, 4.0);
 
     final body = jsonEncode({
       'input': {'text': text},
@@ -361,7 +425,7 @@ class TtsService {
       'model': model,
       'input': text,
       'voice': voice,
-      'speed': (_rate * 2).clamp(0.25, 4.0),
+      'speed': (rate * 2).clamp(0.25, 4.0),
     });
 
     final response = await http.post(
@@ -399,51 +463,29 @@ class TtsService {
 
   Future<void> stop() async {
     _isSpeaking = false;
-    await _systemTts?.stop();
+    try { await _tts.stop(); } catch (_) {}
     await _audioPlayer?.stop();
   }
 
-  Future<void> setRate(double rate) async {
-    _rate = rate;
-    _settings.speechRate = rate;
-    await _systemTts?.setSpeechRate(rate);
-  }
-
   Future<void> dispose() async {
-    await _systemTts?.stop();
+    try { await _tts.stop(); } catch (_) {}
     _audioPlayer?.dispose();
   }
 
-  /// Test TTS. Returns null on success, error string on failure.
-  Future<String?> testSpeak({Duration timeout = const Duration(seconds: 15)}) async {
+  /// Test system TTS. Returns null on success, error string on failure.
+  Future<String?> testSystemSpeak(String text, {Duration timeout = const Duration(seconds: 15)}) async {
     _testCompleter = Completer<String?>();
-
     try {
-      if (_settings.ttsMode == TtsMode.system) {
-        if (_systemTts == null) {
-          await _initSystemTts();
-        }
-        if (_systemTts == null) {
-          return 'System TTS failed to initialize';
-        }
-        // Use _trySpeak which has aggressive retry + engine recreation
-        final ok = await _trySpeak('Hello, this is a test.');
-        if (!ok) {
-          return 'TTS speak failed after all retries.\n'
-              'Please check: Settings → System → Language → Text-to-Speech\n'
-              'Make sure a TTS engine is installed and enabled.';
-        }
-        // Wait for the start callback with timeout
-        final result = await _testCompleter!.future.timeout(
-          timeout,
-          onTimeout: () => null, // If speak returned ok, treat timeout as success
-        );
-        return result;
-      } else {
-        // For cloud/LLM TTS: just try speaking
-        await speak('Hello, this is a test.');
-        return null;
+      final ok = await _trySpeak(text);
+      if (!ok) {
+        return 'TTS speak failed after all retries.\n'
+            'Please check system TTS settings.';
       }
+      final result = await _testCompleter!.future.timeout(
+        timeout,
+        onTimeout: () => null,
+      );
+      return result;
     } catch (e) {
       return e.toString();
     } finally {
@@ -451,7 +493,21 @@ class TtsService {
     }
   }
 
-  /// Open Android system TTS settings so user can configure the engine.
+  /// Test TTS with currently configured mode.
+  Future<String?> testSpeak({Duration timeout = const Duration(seconds: 15)}) async {
+    try {
+      if (_settings.ttsMode == TtsMode.system) {
+        return await testSystemSpeak('Hello, this is a test.', timeout: timeout);
+      } else {
+        await speak('Hello, this is a test.');
+        return null;
+      }
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Open Android system TTS settings.
   static Future<bool> openSystemTtsSettings() async {
     if (!Platform.isAndroid) return false;
     try {
@@ -463,37 +519,6 @@ class TtsService {
     } catch (e) {
       debugPrint('[TTS] openSystemTtsSettings failed: $e');
       return false;
-    }
-  }
-
-  /// Set a specific TTS engine (e.g. 'com.google.android.tts')
-  Future<void> setEngine(String engineName) async {
-    if (_systemTts == null) return;
-    try {
-      await _systemTts!.setEngine(engineName);
-      await _applyConfig();
-      debugPrint('[TTS] engine set to: $engineName');
-    } catch (e) {
-      debugPrint('[TTS] setEngine error: $e');
-    }
-  }
-
-  /// Get available system TTS engines
-  Future<List<String>> getEngines() async {
-    try {
-      if (_systemTts == null) {
-        _systemTts = FlutterTts();
-        await _kickEngine();
-        await _ensureBound(timeout: const Duration(seconds: 3));
-      }
-      final engines = await _systemTts!.getEngines;
-      if (engines is List) {
-        return engines.map((e) => e.toString()).toList();
-      }
-      return [];
-    } catch (e) {
-      debugPrint('[TTS] getEngines error: $e');
-      return [];
     }
   }
 }

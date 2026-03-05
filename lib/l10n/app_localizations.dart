@@ -122,6 +122,11 @@ const _en = <String, String>{
   'tts_open_system_settings_desc': 'Configure TTS engine, download voice data',
   'tts_no_engine': 'No TTS engine found on this device',
   'tts_test_timeout': 'TTS test timed out. Please open system TTS settings to check the engine.',
+  'tts_system_available': 'Available',
+  'tts_system_config': 'System TTS Settings',
+  'tts_speech_rate': 'Speech Rate',
+  'tts_pitch': 'Pitch',
+  'tts_language': 'Language',
 
   'ocr_mode': 'OCR Mode',
   'ocr_mlkit': 'ML Kit (Offline)',
@@ -257,6 +262,11 @@ const _zh = <String, String>{
   'tts_open_system_settings_desc': '配置TTS引擎、下载语音数据',
   'tts_no_engine': '未找到TTS引擎',
   'tts_test_timeout': '语音测试超时，请打开系统TTS设置检查引擎配置。',
+  'tts_system_available': '可用',
+  'tts_system_config': '系统TTS设置',
+  'tts_speech_rate': '语速',
+  'tts_pitch': '音调',
+  'tts_language': '语言',
 
   'ocr_mode': 'OCR模式',
   'ocr_mlkit': 'ML Kit（离线）',

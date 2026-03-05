@@ -86,6 +86,21 @@ class SettingsService {
       (_box?.get('speechRate', defaultValue: 0.5) ?? 0.5).toDouble();
   set speechRate(double v) => _box?.put('speechRate', v);
 
+  // Pitch (0.5 – 2.0)
+  double get pitch =>
+      (_box?.get('pitch', defaultValue: 1.0) ?? 1.0).toDouble();
+  set pitch(double v) => _box?.put('pitch', v);
+
+  // System TTS engine package name (e.g. com.google.android.tts)
+  String get systemTtsEngine =>
+      _box?.get('systemTtsEngine', defaultValue: '') ?? '';
+  set systemTtsEngine(String v) => _box?.put('systemTtsEngine', v);
+
+  // System TTS language tag (e.g. en-US, zh-CN)
+  String get systemTtsLanguage =>
+      _box?.get('systemTtsLanguage', defaultValue: '') ?? '';
+  set systemTtsLanguage(String v) => _box?.put('systemTtsLanguage', v);
+
   // =========== OCR Settings ===========
 
   OcrMode get ocrMode {

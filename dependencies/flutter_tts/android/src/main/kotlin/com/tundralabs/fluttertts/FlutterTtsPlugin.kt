@@ -242,6 +242,7 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
             } else {
                 engineResult!!.error("TtsError","Failed to initialize TextToSpeech with status: $status", null)
             }
+            //engineResult = null
         }
 
     private val onInitListenerWithoutCallback: TextToSpeech.OnInitListener =
@@ -568,6 +569,8 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
         val locales = ArrayList<String>()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // While this method was introduced in API level 21, it seems that it
+                // has not been implemented in the speech service side until API Level 23.
                 for (locale in tts!!.availableLanguages) {
                     locales.add(locale.toLanguageTag())
                 }
@@ -611,7 +614,7 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
         }
         result.success(voice)
     }
-
+    // Add voice properties into the voice map
     fun readVoiceProperties(map: MutableMap<String, String>, voice: Voice) {
         map["name"] = voice.name
         map["locale"] = voice.locale.toLanguageTag()
@@ -619,8 +622,10 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
         map["latency"] = latencyToString(voice.latency)
         map["network_required"] = if (voice.isNetworkConnectionRequired) "1" else "0"
         map["features"] = voice.features.joinToString(separator = "\t")
+        
     }
 
+    // Function to map quality integer to the constant name
     fun qualityToString(quality: Int): String {
         return when (quality) {
             Voice.QUALITY_VERY_HIGH -> "very high"
@@ -631,7 +636,7 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
             else -> "unknown"
         }
     }
-
+    // Function to map latency integer to the constant name
     fun latencyToString(quality: Int): String {
         return when (quality) {
             Voice.LATENCY_VERY_HIGH -> "very high"
@@ -644,6 +649,10 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
     }
 
     private fun getSpeechRateValidRange(result: Result) {
+        // Valid values available in the android documentation.
+        // https://developer.android.com/reference/android/speech/tts/TextToSpeech#setSpeechRate(float)
+        // To make the FlutterTts API consistent across platforms,
+        // we map Android 1.0 to flutter 0.5 and so on.
         val data = HashMap<String, String>()
         data["min"] = "0"
         data["normal"] = "0.5"
@@ -652,10 +661,6 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
         result.success(data)
     }
 
-    /**
-     * Speak the given text. Returns true if the TTS service connection is usable,
-     * false if it needs to be re-initialized (the call will be queued).
-     */
     private fun speak(text: String, focus: Boolean): Boolean {
         val uuid: String = UUID.randomUUID().toString()
         utterances[uuid] = text
@@ -675,7 +680,6 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
                 tts!!.speak(text, queueMode, bundle, uuid) == 0
             }
         } else {
-            // Service connection is dead — recreate TTS and queue the call
             ttsStatus = null
             tts = TextToSpeech(context, onInitListenerWithoutCallback, selectedEngine)
             false
@@ -751,11 +755,6 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
         }
     }
 
-    /**
-     * CRITICAL FIX for Xiaomi HyperOS and other devices where TTS service
-     * connection can silently die. Uses reflection to check if the internal
-     * mServiceConnection field is still alive.
-     */
     private fun ismServiceConnectionUsable(tts: TextToSpeech?): Boolean {
         var isBindConnection = true
         if (tts == null) {
@@ -782,6 +781,7 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
         return isBindConnection
     }
 
+    // Method to set AudioAttributes for navigation usage
     private fun setAudioAttributesForNavigation() {
         if (tts != null) {
             val audioAttributes = AudioAttributes.Builder()
@@ -797,7 +797,7 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                .setOnAudioFocusChangeListener { }
+                .setOnAudioFocusChangeListener { /* opcional para monitorar mudanças de foco */ }
                 .build()
             audioManager?.requestAudioFocus(audioFocusRequest!!)
         } else {

@@ -31,7 +31,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void initState() {
     super.initState();
     _sentences = List.from(widget.lesson.sentences);
-    _tts = TtsService(settingsService);
+    _tts = TtsService.instance(settingsService);
     _speechRate = settingsService.speechRate;
     _tts.onComplete = () => _onSpeechComplete();
     _tts.onStart = () {
@@ -46,7 +46,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
-    _tts.dispose();
+    // Don't dispose singleton TtsService; just detach callbacks
+    _tts.onComplete = null;
+    _tts.onStart = null;
     super.dispose();
   }
 

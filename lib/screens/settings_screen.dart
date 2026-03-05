@@ -22,9 +22,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _ttsTesting = false;
   String? _ttsTestResult;
 
-  // System TTS engine info
-  List<String> _ttsEngines = [];
-  String? _selectedEngine;
+  late TtsService _tts;
 
   @override
   void initState() {
@@ -34,17 +32,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl = TextEditingController(text: s.ttsModel);
     _ocrModelCtrl = TextEditingController(text: s.ocrModel);
     _textOptModelCtrl = TextEditingController(text: s.textOptModel);
-    _loadTtsEngines();
-  }
-
-  Future<void> _loadTtsEngines() async {
-    final tts = TtsService(settingsService);
-    await tts.init();
-    final engines = await tts.getEngines();
-    if (mounted) {
-      setState(() => _ttsEngines = engines);
-    }
-    await tts.dispose();
+    _tts = TtsService.instance(settingsService);
+    _tts.init();
   }
 
   @override
@@ -64,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final s = settingsService;
     final providers = _providers;
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: Text(t('settings'))),
@@ -134,58 +124,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (v) => setState(() => s.ttsMode = v),
           ),
 
-          // System TTS: show engines + open system settings
+          // System TTS: iOS-style card with config + test
           if (s.ttsMode == TtsMode.system) ...[
-            if (_ttsEngines.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: DropdownButtonFormField<String>(
-                  value: _selectedEngine,
-                  decoration: InputDecoration(
-                    labelText: t('tts_engine'),
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    DropdownMenuItem<String>(
-                      value: null,
-                      child: Text(t('tts_engine_default')),
-                    ),
-                    ..._ttsEngines.map((e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(
-                            e.replaceAll('com.google.android.tts', 'Google TTS')
-                                .replaceAll('com.xiaomi.mibrain.speech', 'Xiaomi TTS')
-                                .replaceAll('com.iflytek.speechcloud', 'iFlytek TTS'),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        )),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _selectedEngine = v);
-                  },
-                ),
-              ),
-            if (_ttsEngines.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(t('tts_no_engine'),
-                    style: TextStyle(color: Colors.orange[700], fontSize: 13)),
-              ),
-            if (Platform.isAndroid)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await TtsService.openSystemTtsSettings();
-                    // Reload engines when user comes back
-                    await Future.delayed(const Duration(seconds: 1));
-                    _loadTtsEngines();
-                  },
-                  icon: const Icon(Icons.settings, size: 18),
-                  label: Text(t('tts_open_system_settings')),
-                ),
-              ),
+            const SizedBox(height: 4),
+            _buildSystemTtsCard(cs),
           ],
 
           // Cloud / LLM TTS: show provider/model/voice
@@ -299,12 +241,424 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Book Speaker'),
-            subtitle: Text('v1.2.0 — ${t('app_name')}'),
+            subtitle: Text('v1.3.0 — ${t('app_name')}'),
           ),
           const SizedBox(height: 32),
         ],
       ),
     );
+  }
+
+  // ---- System TTS Card (Kelivo-style) ----
+
+  Widget _buildSystemTtsCard(ColorScheme cs) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.white10 : Colors.white.withOpacity(0.96);
+    final available = _tts.isInitialized && _tts.error == null;
+    final statusText = available
+        ? t('tts_system_available')
+        : (_tts.error ?? t('tts_no_engine'));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: cs.outlineVariant.withOpacity(isDark ? 0.08 : 0.06),
+            width: 0.6,
+          ),
+        ),
+        child: Column(
+          children: [
+            // System TTS row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white10
+                          : cs.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(Icons.record_voice_over,
+                        size: 18, color: cs.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t('tts_system'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: cs.onSurface.withOpacity(0.9),
+                              fontWeight: FontWeight.w600,
+                            )),
+                        const SizedBox(height: 3),
+                        Text(statusText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: available
+                                  ? Colors.green.shade600
+                                  : Colors.orange.shade600,
+                            )),
+                      ],
+                    ),
+                  ),
+                  // Test speak button
+                  IconButton(
+                    icon: const Icon(Icons.volume_up, size: 20),
+                    tooltip: t('tts_test'),
+                    onPressed: available
+                        ? () async {
+                            await _tts.testSystemSpeak('Hello, this is a test.');
+                          }
+                        : null,
+                  ),
+                  // Config button
+                  IconButton(
+                    icon: const Icon(Icons.tune, size: 20),
+                    tooltip: t('tts_system_config'),
+                    onPressed: available
+                        ? () => _showSystemTtsConfigSheet(context)
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+            // Open system settings
+            if (Platform.isAndroid) ...[
+              Divider(
+                height: 1,
+                thickness: 0.6,
+                indent: 54,
+                endIndent: 12,
+                color: cs.outlineVariant.withOpacity(0.18),
+              ),
+              InkWell(
+                onTap: () async {
+                  await TtsService.openSystemTtsSettings();
+                },
+                borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(12)),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 48),
+                      Icon(Icons.settings,
+                          size: 16,
+                          color: cs.onSurface.withOpacity(0.6)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          t('tts_open_system_settings'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: cs.onSurface.withOpacity(0.7),
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.chevron_right,
+                          size: 18,
+                          color: cs.onSurface.withOpacity(0.4)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- System TTS Config Bottom Sheet ----
+
+  void _showSystemTtsConfigSheet(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    double rate = _tts.rate;
+    double pitch = _tts.pitch;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: false,
+      backgroundColor: cs.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(t('tts_system_config'),
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(height: 10),
+                // Engine selector
+                FutureBuilder<List<String>>(
+                  future: _tts.getEngines(),
+                  builder: (context, snap) {
+                    final engines = snap.data ?? const <String>[];
+                    final cur = _tts.engineId.isNotEmpty
+                        ? _tts.engineId
+                        : (engines.isNotEmpty ? engines.first : '');
+                    return _sheetSelectRow(
+                      context,
+                      label: t('tts_engine'),
+                      value: cur.isEmpty ? t('tts_engine_default') : _engineDisplayName(cur),
+                      options: engines,
+                      displayName: _engineDisplayName,
+                      onSelected: (picked) async {
+                        await _tts.setEngineId(picked);
+                        (ctx as Element).markNeedsBuild();
+                        if (mounted) setState(() {});
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 4),
+                // Language selector
+                FutureBuilder<List<String>>(
+                  future: _tts.getLanguages(),
+                  builder: (context, snap) {
+                    final langs = snap.data ?? const <String>[];
+                    final cur = _tts.languageTag.isNotEmpty
+                        ? _tts.languageTag
+                        : (langs.contains('zh-CN')
+                            ? 'zh-CN'
+                            : (langs.contains('en-US')
+                                ? 'en-US'
+                                : (langs.isNotEmpty ? langs.first : '')));
+                    return _sheetSelectRow(
+                      context,
+                      label: t('tts_language'),
+                      value: cur.isEmpty ? t('tts_engine_default') : cur,
+                      options: langs,
+                      onSelected: (picked) async {
+                        await _tts.setLanguageTag(picked);
+                        (ctx as Element).markNeedsBuild();
+                        if (mounted) setState(() {});
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                // Speech rate slider
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(t('tts_speech_rate'),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurface.withOpacity(0.7))),
+                ),
+                StatefulBuilder(
+                  builder: (ctx2, setSlider) {
+                    return Slider(
+                      value: rate,
+                      min: 0.1,
+                      max: 1.0,
+                      divisions: 9,
+                      label: '${(rate * 2).toStringAsFixed(1)}x',
+                      onChanged: (v) {
+                        setSlider(() => rate = v);
+                      },
+                      onChangeEnd: (v) async {
+                        await _tts.setRate(v);
+                        if (mounted) setState(() {});
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 4),
+                // Pitch slider
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(t('tts_pitch'),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurface.withOpacity(0.7))),
+                ),
+                StatefulBuilder(
+                  builder: (ctx2, setSlider) {
+                    return Slider(
+                      value: pitch,
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 15,
+                      label: pitch.toStringAsFixed(1),
+                      onChanged: (v) {
+                        setSlider(() => pitch = v);
+                      },
+                      onChangeEnd: (v) async {
+                        await _tts.setPitch(v);
+                        if (mounted) setState(() {});
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.of(ctx).maybePop(),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: Text(t('done')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---- Sheet select row (Kelivo-style) ----
+
+  Widget _sheetSelectRow(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required List<String> options,
+    String Function(String)? displayName,
+    required Future<void> Function(String picked) onSelected,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: options.isEmpty
+          ? null
+          : () async {
+              final picked = await showModalBottomSheet<String>(
+                context: context,
+                backgroundColor: cs.surface,
+                shape: const RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (ctx2) {
+                  return SafeArea(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx2).size.height * 0.6,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 8),
+                          Center(
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: cs.onSurface.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Flexible(
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: options.length,
+                              separatorBuilder: (_, __) => Divider(
+                                height: 1,
+                                thickness: 0.6,
+                                indent: 16,
+                                endIndent: 16,
+                                color: cs.outlineVariant.withOpacity(0.18),
+                              ),
+                              itemBuilder: (_, i) {
+                                final display = displayName != null
+                                    ? displayName(options[i])
+                                    : options[i];
+                                return ListTile(
+                                  title: Text(display,
+                                      style: const TextStyle(fontSize: 15)),
+                                  trailing: options[i] == value
+                                      ? Icon(Icons.check,
+                                          size: 18, color: cs.primary)
+                                      : null,
+                                  onTap: () =>
+                                      Navigator.of(ctx2).pop(options[i]),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+              if (picked != null && picked.isNotEmpty) {
+                await onSelected(picked);
+              }
+            },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 15,
+                      color: cs.onSurface.withOpacity(0.9))),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Text(
+                displayName != null ? displayName(value) : value,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: cs.onSurface.withOpacity(0.6)),
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                size: 16, color: cs.onSurface.withOpacity(0.4)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _engineDisplayName(String engine) {
+    if (engine.contains('google')) return 'Google TTS';
+    if (engine.contains('xiaomi') || engine.contains('mibrain')) return 'Xiaomi TTS';
+    if (engine.contains('iflytek')) return 'iFlytek TTS';
+    if (engine.contains('samsung')) return 'Samsung TTS';
+    return engine;
   }
 
   // ---- TTS test ----
@@ -315,18 +669,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _ttsTestResult = null;
     });
 
-    final tts = TtsService(settingsService);
-    await tts.init();
-
-    // If user selected a specific engine, set it before testing
-    if (_selectedEngine != null && _selectedEngine!.isNotEmpty) {
-      await tts.setEngine(_selectedEngine!);
-      // Re-configure after engine change
-      await tts.init();
-    }
-
-    final err = await tts.testSpeak();
-    await tts.dispose();
+    await _tts.init();
+    final err = await _tts.testSpeak();
 
     if (mounted) {
       setState(() {
