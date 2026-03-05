@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import '../models/ai_provider.dart';
 import '../models/settings.dart';
+import '../l10n/app_localizations.dart';
 import '../services/service_locator.dart';
+import '../services/tts_service.dart';
+import 'providers_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,147 +14,195 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late TextEditingController _ttsApiKeyCtrl;
-  late TextEditingController _ttsRegionCtrl;
   late TextEditingController _ttsVoiceCtrl;
-  late TextEditingController _llmApiKeyCtrl;
-  late TextEditingController _llmEndpointCtrl;
-  late TextEditingController _llmModelCtrl;
+  late TextEditingController _ttsModelCtrl;
+  late TextEditingController _ocrModelCtrl;
+  late TextEditingController _textOptModelCtrl;
+  bool _ttsTesting = false;
 
   @override
   void initState() {
     super.initState();
     final s = settingsService;
-    _ttsApiKeyCtrl = TextEditingController(text: s.ttsApiKey);
-    _ttsRegionCtrl = TextEditingController(text: s.ttsRegion);
     _ttsVoiceCtrl = TextEditingController(text: s.ttsVoice);
-    _llmApiKeyCtrl = TextEditingController(text: s.llmApiKey);
-    _llmEndpointCtrl = TextEditingController(text: s.llmEndpoint);
-    _llmModelCtrl = TextEditingController(text: s.llmModel);
+    _ttsModelCtrl = TextEditingController(text: s.ttsModel);
+    _ocrModelCtrl = TextEditingController(text: s.ocrModel);
+    _textOptModelCtrl = TextEditingController(text: s.textOptModel);
   }
 
   @override
   void dispose() {
-    _ttsApiKeyCtrl.dispose();
-    _ttsRegionCtrl.dispose();
     _ttsVoiceCtrl.dispose();
-    _llmApiKeyCtrl.dispose();
-    _llmEndpointCtrl.dispose();
-    _llmModelCtrl.dispose();
+    _ttsModelCtrl.dispose();
+    _ocrModelCtrl.dispose();
+    _textOptModelCtrl.dispose();
     super.dispose();
   }
+
+  List<AiProvider> get _providers => settingsService.getProviders();
+
+  // ---- Build ----
 
   @override
   Widget build(BuildContext context) {
     final s = settingsService;
-    final needsLlm = s.enableTextOptimization || s.ocrEngine == OcrEngine.llm;
+    final providers = _providers;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(t('settings'))),
       body: ListView(
         children: [
-          // ---- TTS Section ----
-          _sectionHeader('TTS (Text-to-Speech)'),
-          _buildDropdown<TtsEngine>(
-            title: 'Engine',
-            value: s.ttsEngine,
-            items: TtsEngine.values,
-            labelOf: (e) => e.label,
-            onChanged: (v) => setState(() => s.ttsEngine = v),
+          // =========== Language ===========
+          _section(t('settings_language')),
+          _radioTile<AppLocale>(
+            title: 'English',
+            value: AppLocale.en,
+            groupValue: s.appLocale,
+            onChanged: (v) {
+              setState(() {
+                s.appLocale = v;
+                S.setLocale(v);
+              });
+            },
           ),
-          if (s.ttsEngine != TtsEngine.system) ...[
-            _buildTextField(
-              label: 'API Key',
-              controller: _ttsApiKeyCtrl,
-              onChanged: (v) => s.ttsApiKey = v,
-              obscure: true,
+          _radioTile<AppLocale>(
+            title: '中文',
+            value: AppLocale.zh,
+            groupValue: s.appLocale,
+            onChanged: (v) {
+              setState(() {
+                s.appLocale = v;
+                S.setLocale(v);
+              });
+            },
+          ),
+          const Divider(),
+
+          // =========== AI Providers ===========
+          _section(t('settings_providers')),
+          ListTile(
+            leading: const Icon(Icons.cloud),
+            title: Text(t('settings_manage_providers')),
+            subtitle: Text('${providers.length} ${t('settings_providers').toLowerCase()}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const ProvidersScreen()));
+              setState(() {});
+            },
+          ),
+          const Divider(),
+
+          // =========== TTS ===========
+          _section(t('settings_tts')),
+          _radioTile<TtsMode>(
+            title: t('tts_system'),
+            subtitle: t('tts_system_desc'),
+            value: TtsMode.system,
+            groupValue: s.ttsMode,
+            onChanged: (v) => setState(() => s.ttsMode = v),
+          ),
+          _radioTile<TtsMode>(
+            title: t('tts_traditional'),
+            subtitle: t('tts_traditional_desc'),
+            value: TtsMode.traditional,
+            groupValue: s.ttsMode,
+            onChanged: (v) => setState(() => s.ttsMode = v),
+          ),
+          _radioTile<TtsMode>(
+            title: t('tts_llm'),
+            subtitle: t('tts_llm_desc'),
+            value: TtsMode.llm,
+            groupValue: s.ttsMode,
+            onChanged: (v) => setState(() => s.ttsMode = v),
+          ),
+          if (s.ttsMode != TtsMode.system) ...[
+            _providerSelector(
+              label: t('tts_provider'),
+              selectedId: s.ttsProviderId,
+              providers: providers,
+              onChanged: (id) => setState(() => s.ttsProviderId = id),
             ),
-            if (s.ttsEngine == TtsEngine.azure)
-              _buildTextField(
-                label: 'Region',
-                controller: _ttsRegionCtrl,
-                onChanged: (v) => s.ttsRegion = v,
-                hint: 'e.g. eastus',
-              ),
-            _buildTextField(
-              label: 'Voice',
-              controller: _ttsVoiceCtrl,
-              onChanged: (v) => s.ttsVoice = v,
-              hint: s.ttsEngine == TtsEngine.azure
-                  ? 'e.g. en-US-JennyNeural'
-                  : 'e.g. en-US-Neural2-C',
+            if (s.ttsMode == TtsMode.llm)
+              _field(t('tts_model'), _ttsModelCtrl,
+                  (v) => s.ttsModel = v, t('tts_model_hint')),
+            _field(
+                t('tts_voice'),
+                _ttsVoiceCtrl,
+                (v) => s.ttsVoice = v,
+                s.ttsMode == TtsMode.llm
+                    ? t('tts_voice_hint_llm')
+                    : t('tts_voice_hint_traditional')),
+          ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: OutlinedButton.icon(
+              onPressed: _ttsTesting ? null : _testTts,
+              icon: _ttsTesting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.volume_up, size: 18),
+              label: Text(_ttsTesting ? t('testing') : t('tts_test')),
             ),
+          ),
+          const Divider(),
+
+          // =========== OCR ===========
+          _section(t('settings_ocr')),
+          _radioTile<OcrMode>(
+            title: t('ocr_mlkit'),
+            subtitle: t('ocr_mlkit_desc'),
+            value: OcrMode.mlkit,
+            groupValue: s.ocrMode,
+            onChanged: (v) => setState(() => s.ocrMode = v),
+          ),
+          _radioTile<OcrMode>(
+            title: t('ocr_llm'),
+            subtitle: t('ocr_llm_desc'),
+            value: OcrMode.llm,
+            groupValue: s.ocrMode,
+            onChanged: (v) => setState(() => s.ocrMode = v),
+          ),
+          if (s.ocrMode == OcrMode.llm) ...[
+            _providerSelector(
+              label: t('ocr_provider'),
+              selectedId: s.ocrProviderId,
+              providers: providers,
+              onChanged: (id) => setState(() => s.ocrProviderId = id),
+            ),
+            _field(t('ocr_model'), _ocrModelCtrl, (v) => s.ocrModel = v,
+                t('ocr_model_hint')),
           ],
           const Divider(),
 
-          // ---- OCR Section ----
-          _sectionHeader('OCR (Image Recognition)'),
-          _buildDropdown<OcrEngine>(
-            title: 'Engine',
-            value: s.ocrEngine,
-            items: OcrEngine.values,
-            labelOf: (e) => e.label,
-            onChanged: (v) => setState(() => s.ocrEngine = v),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              s.ocrEngine.description,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ),
-          const Divider(),
-
-          // ---- LLM Section ----
-          _sectionHeader('LLM (AI Text Processing)'),
+          // =========== Text Optimization ===========
+          _section(t('settings_text_opt')),
           SwitchListTile(
-            title: const Text('Text Optimization'),
-            subtitle: const Text('Use AI to clean up pasted text'),
+            title: Text(t('text_opt_enable')),
+            subtitle: Text(t('text_opt_desc')),
             value: s.enableTextOptimization,
             onChanged: (v) => setState(() => s.enableTextOptimization = v),
           ),
-          if (needsLlm) ...[
-            _buildDropdown<LlmProvider>(
-              title: 'LLM Provider',
-              value: s.llmProvider,
-              items: LlmProvider.values,
-              labelOf: (e) => e.label,
-              onChanged: (v) {
-                setState(() {
-                  s.llmProvider = v;
-                  _llmModelCtrl.text = v.defaultModel;
-                  s.llmModel = v.defaultModel;
-                });
-              },
+          if (s.enableTextOptimization) ...[
+            _providerSelector(
+              label: t('text_opt_provider'),
+              selectedId: s.textOptProviderId,
+              providers: providers,
+              onChanged: (id) => setState(() => s.textOptProviderId = id),
             ),
-            _buildTextField(
-              label: 'API Key',
-              controller: _llmApiKeyCtrl,
-              onChanged: (v) => s.llmApiKey = v,
-              obscure: true,
-            ),
-            if (s.llmProvider.needsEndpoint)
-              _buildTextField(
-                label: 'Endpoint',
-                controller: _llmEndpointCtrl,
-                onChanged: (v) => s.llmEndpoint = v,
-                hint: 'https://your-resource.openai.azure.com',
-              ),
-            _buildTextField(
-              label: 'Model',
-              controller: _llmModelCtrl,
-              onChanged: (v) => s.llmModel = v,
-              hint: s.llmProvider.defaultModel,
-            ),
+            _field(t('text_opt_model'), _textOptModelCtrl,
+                (v) => s.textOptModel = v, t('text_opt_model_hint')),
           ],
           const Divider(),
 
-          // ---- About ----
-          _sectionHeader('About'),
-          const ListTile(
-            title: Text('Book Speaker'),
-            subtitle: Text('v1.0.0 — English reading assistant for children'),
-            leading: Icon(Icons.info_outline),
+          // =========== About ===========
+          _section(t('about')),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Book Speaker'),
+            subtitle: Text('v1.1.0 — ${t('app_name')}'),
           ),
           const SizedBox(height: 32),
         ],
@@ -158,56 +210,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ---- Helper Widgets ----
+  // ---- TTS test ----
 
-  Widget _sectionHeader(String title) {
+  Future<void> _testTts() async {
+    setState(() => _ttsTesting = true);
+    final tts = TtsService(settingsService);
+    await tts.init();
+    final err = await tts.testSpeak();
+    await Future.delayed(const Duration(seconds: 2));
+    await tts.dispose();
+    if (mounted) {
+      setState(() => _ttsTesting = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err == null ? t('success') : '${t('failed')}: $err'),
+      ));
+    }
+  }
+
+  // ---- Reusable widgets ----
+
+  Widget _section(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
+      child: Text(title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.primary,
+          )),
     );
   }
 
-  Widget _buildDropdown<T>({
+  Widget _radioTile<T>({
     required String title,
+    String? subtitle,
     required T value,
-    required List<T> items,
-    required String Function(T) labelOf,
+    required T groupValue,
     required ValueChanged<T> onChanged,
   }) {
-    return ListTile(
+    return RadioListTile<T>(
       title: Text(title),
-      trailing: DropdownButton<T>(
-        value: value,
-        underline: const SizedBox(),
-        items: items
-            .map((e) => DropdownMenuItem(value: e, child: Text(labelOf(e))))
-            .toList(),
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
+      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12)) : null,
+      value: value,
+      groupValue: groupValue,
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+      dense: true,
+    );
+  }
+
+  Widget _providerSelector({
+    required String label,
+    required String selectedId,
+    required List<AiProvider> providers,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: DropdownButtonFormField<String>(
+        value: (selectedId.isNotEmpty && providers.any((p) => p.id == selectedId))
+            ? selectedId
+            : '',
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+        items: [
+          DropdownMenuItem(value: '', child: Text(t('none'))),
+          ...providers.map((p) =>
+              DropdownMenuItem(value: p.id, child: Text(p.name))),
+        ],
+        onChanged: (v) => onChanged(v ?? ''),
       ),
     );
   }
 
-  Widget _buildTextField({
-    required String label,
-    required TextEditingController controller,
-    required ValueChanged<String> onChanged,
-    bool obscure = false,
-    String? hint,
-  }) {
+  Widget _field(String label, TextEditingController ctrl,
+      ValueChanged<String> onChanged, String hint) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: TextField(
-        controller: controller,
-        obscureText: obscure,
+        controller: ctrl,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,

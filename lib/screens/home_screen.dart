@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/lesson.dart';
+import '../l10n/app_localizations.dart';
 import '../services/service_locator.dart';
 import 'import_screen.dart';
 import 'reader_screen.dart';
@@ -34,17 +35,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Lesson'),
-        content: Text('Delete "${lesson.title}"?'),
+        title: Text(t('delete_lesson')),
+        content: Text(t('delete_lesson_confirm').replaceAll('%s', lesson.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(t('cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child:
-                const Text('Delete', style: TextStyle(color: Colors.red)),
+                Text(t('delete'), style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -59,12 +60,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Book Speaker'),
+        title: Text(t('app_name')),
         centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            tooltip: 'Settings',
+            tooltip: t('settings'),
             onPressed: () async {
               await Navigator.push(
                 context,
@@ -85,11 +86,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icon(Icons.menu_book,
                           size: 80, color: Colors.grey[300]),
                       const SizedBox(height: 16),
-                      Text('No lessons yet',
+                      Text(t('no_lessons'),
                           style: TextStyle(
                               fontSize: 18, color: Colors.grey[500])),
                       const SizedBox(height: 8),
-                      Text('Tap + to add your first lesson',
+                      Text(t('tap_add_lesson'),
                           style: TextStyle(color: Colors.grey[400])),
                     ],
                   ),
@@ -111,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle:
-                            Text('${lesson.sentences.length} sentences'),
+                            Text(t('sentences_detected').replaceAll('%d', '${lesson.sentences.length}')),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline,
                               color: Colors.red),
@@ -142,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         },
         icon: const Icon(Icons.add),
-        label: const Text('Add Lesson'),
+        label: Text(t('add_lesson')),
       ),
     );
   }

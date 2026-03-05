@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/lesson.dart';
+import '../l10n/app_localizations.dart';
 import '../services/ocr_service.dart';
 import '../services/service_locator.dart';
 
@@ -56,7 +57,7 @@ class _ImportScreenState extends State<ImportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('OCR failed: $e')),
+          SnackBar(content: Text('${t('ocr_failed')}: $e')),
         );
       }
     } finally {
@@ -68,19 +69,28 @@ class _ImportScreenState extends State<ImportScreen> {
     final rawText = _textController.text.trim();
     if (rawText.isEmpty) return;
 
+    // Validate that LLM provider + model are configured
+    final provider = settingsService.getProvider(settingsService.textOptProviderId);
+    if (provider == null || settingsService.textOptModel.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('text_opt_requires_llm'))),
+      );
+      return;
+    }
+
     setState(() => _isOptimizing = true);
     try {
       final optimized = await llmService.optimizeText(rawText);
       _textController.text = optimized;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Text optimized successfully')),
+          SnackBar(content: Text(t('text_optimized'))),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Optimization failed: $e')),
+          SnackBar(content: Text('${t('optimization_failed')}: $e')),
         );
       }
     } finally {
@@ -94,13 +104,13 @@ class _ImportScreenState extends State<ImportScreen> {
 
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a title')),
+        SnackBar(content: Text(t('enter_title'))),
       );
       return;
     }
     if (rawText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter or import some text')),
+        SnackBar(content: Text(t('enter_text'))),
       );
       return;
     }
@@ -108,7 +118,7 @@ class _ImportScreenState extends State<ImportScreen> {
     final sentences = Lesson.parseText(rawText);
     if (sentences.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No sentences found in text')),
+        SnackBar(content: Text(t('no_sentences'))),
       );
       return;
     }
@@ -132,12 +142,12 @@ class _ImportScreenState extends State<ImportScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Import Lesson'),
+        title: Text(t('import_lesson')),
         actions: [
           TextButton.icon(
             onPressed: (_isProcessing || _isOptimizing) ? null : _save,
             icon: const Icon(Icons.check),
-            label: const Text('Save'),
+            label: Text(t('save')),
           ),
         ],
       ),
@@ -148,9 +158,9 @@ class _ImportScreenState extends State<ImportScreen> {
           children: [
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Lesson Title',
-                hintText: 'e.g. Unit 3 - At the Zoo',
+              decoration: InputDecoration(
+                labelText: t('lesson_title'),
+                hintText: t('lesson_title_hint'),
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.title),
               ),
@@ -164,7 +174,7 @@ class _ImportScreenState extends State<ImportScreen> {
                         ? null
                         : () => _pickImage(ImageSource.camera),
                     icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take Photo'),
+                    label: Text(t('take_photo')),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -174,7 +184,7 @@ class _ImportScreenState extends State<ImportScreen> {
                         ? null
                         : () => _pickImage(ImageSource.gallery),
                     icon: const Icon(Icons.photo_library),
-                    label: const Text('From Gallery'),
+                    label: Text(t('from_gallery')),
                   ),
                 ),
               ],
@@ -183,14 +193,14 @@ class _ImportScreenState extends State<ImportScreen> {
               const SizedBox(height: 16),
               const Center(child: CircularProgressIndicator()),
               const SizedBox(height: 8),
-              const Center(child: Text('Recognizing text...')),
+              Center(child: Text(t('recognizing_text'))),
             ],
             const SizedBox(height: 16),
             Row(
               children: [
-                const Expanded(
-                  child: Text('Or paste dialogue text below:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Text(t('paste_text_hint'),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 if (showOptimize)
                   TextButton.icon(
@@ -204,7 +214,7 @@ class _ImportScreenState extends State<ImportScreen> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.auto_fix_high, size: 18),
-                    label: Text(_isOptimizing ? 'Optimizing...' : 'AI Optimize'),
+                    label: Text(_isOptimizing ? t('optimizing') : t('ai_optimize')),
                   ),
               ],
             ),
@@ -222,7 +232,7 @@ class _ImportScreenState extends State<ImportScreen> {
             const SizedBox(height: 12),
             if (_sentenceCount > 0)
               Text(
-                '$_sentenceCount sentences detected',
+                t('sentences_detected').replaceAll('%d', '$_sentenceCount'),
                 style: TextStyle(color: Colors.green[700]),
               ),
           ],

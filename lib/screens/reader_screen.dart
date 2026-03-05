@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/lesson.dart';
+import '../l10n/app_localizations.dart';
 import '../services/tts_service.dart';
 import '../services/service_locator.dart';
 
@@ -36,6 +37,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _tts.onStart = () {
       if (mounted) setState(() => _isPlaying = true);
     };
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    await _tts.init();
   }
 
   @override
@@ -152,16 +158,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Sentences'),
-        content: Text('Delete ${_selectedIndices.length} sentence(s)?'),
+        title: Text(t('delete_sentences_title')),
+        content: Text(t('delete_sentences_confirm').replaceAll('%d', '${_selectedIndices.length}')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(t('cancel'))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child:
-                  const Text('Delete', style: TextStyle(color: Colors.red))),
+                  Text(t('delete'), style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -182,16 +188,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Sentence'),
-        content: const Text('Delete this sentence?'),
+        title: Text(t('delete_sentence_title')),
+        content: Text(t('delete_sentence_confirm')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(t('cancel'))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child:
-                  const Text('Delete', style: TextStyle(color: Colors.red))),
+                  Text(t('delete'), style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -211,15 +217,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Edit Sentence'),
+        title: Text(t('edit_sentence')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: speakerCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Speaker (optional)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t('speaker_optional'),
+                border: const OutlineInputBorder(),
                 isDense: true,
               ),
             ),
@@ -227,9 +233,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
             TextField(
               controller: textCtrl,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Text',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t('text'),
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -237,10 +243,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(t('cancel'))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Save')),
+              child: Text(t('save'))),
         ],
       ),
     );
@@ -269,15 +275,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add Sentence'),
+        title: Text(t('add_sentence')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: speakerCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Speaker (optional)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t('speaker_optional'),
+                border: const OutlineInputBorder(),
                 isDense: true,
               ),
             ),
@@ -286,9 +292,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
               controller: textCtrl,
               maxLines: 3,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Text',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t('text'),
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -296,10 +302,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(t('cancel'))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Add')),
+              child: Text(t('add'))),
         ],
       ),
     );
@@ -367,29 +373,29 @@ class _ReaderScreenState extends State<ReaderScreen> {
           TextButton(
             onPressed: _selectAll,
             child: Text(_selectedIndices.length == _sentences.length
-                ? 'Deselect'
-                : 'Select All'),
+                ? t('deselect')
+                : t('select_all')),
           ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.red),
-            tooltip: 'Delete selected',
+            tooltip: t('delete_selected'),
             onPressed: _selectedIndices.isNotEmpty ? _deleteSelected : null,
           ),
         ] else
           PopupMenuButton<PlayMode>(
             icon: Icon(_playModeIcon()),
-            tooltip: 'Play mode',
+            tooltip: t('play_mode'),
             onSelected: (mode) => setState(() => _playMode = mode),
             itemBuilder: (_) => [
-              _buildModeItem(PlayMode.single, Icons.looks_one, 'Single'),
+              _buildModeItem(PlayMode.single, Icons.looks_one, t('single_mode')),
               _buildModeItem(
-                  PlayMode.continuous, Icons.playlist_play, 'Continuous'),
-              _buildModeItem(PlayMode.loop, Icons.repeat, 'Loop All'),
+                  PlayMode.continuous, Icons.playlist_play, t('continuous_mode')),
+              _buildModeItem(PlayMode.loop, Icons.repeat, t('loop_mode')),
             ],
           ),
         IconButton(
           icon: Icon(_isEditMode ? Icons.check : Icons.edit_note),
-          tooltip: _isEditMode ? 'Done' : 'Edit',
+          tooltip: _isEditMode ? t('done') : t('edit'),
           onPressed: _toggleEditMode,
         ),
       ],
@@ -608,7 +614,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 FilledButton.icon(
                   onPressed: _playAll,
                   icon: Icon(_isPlaying ? Icons.stop : Icons.play_arrow),
-                  label: Text(_isPlaying ? 'Stop' : 'Play All'),
+                  label: Text(_isPlaying ? t('stop') : t('play_all')),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 24, vertical: 12),

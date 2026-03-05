@@ -1,82 +1,116 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import '../models/ai_provider.dart';
 import '../models/settings.dart';
 
 class SettingsService {
   static const _boxName = 'settings';
+  static const _providerBoxName = 'providers';
   Box? _box;
+  Box<String>? _providerBox;
 
   Future<void> init() async {
     _box ??= await Hive.openBox(_boxName);
+    _providerBox ??= await Hive.openBox<String>(_providerBoxName);
   }
 
-  // ---- TTS Settings ----
+  // =========== App Locale ===========
 
-  TtsEngine get ttsEngine {
-    final idx = _box?.get('ttsEngine', defaultValue: 0) ?? 0;
-    return TtsEngine.values[idx.clamp(0, TtsEngine.values.length - 1)];
+  AppLocale get appLocale {
+    final idx = _box?.get('appLocale', defaultValue: 0) ?? 0;
+    return AppLocale.values[idx.clamp(0, AppLocale.values.length - 1)];
   }
 
-  set ttsEngine(TtsEngine v) => _box?.put('ttsEngine', v.index);
+  set appLocale(AppLocale v) => _box?.put('appLocale', v.index);
 
-  String get ttsApiKey =>
-      _box?.get('ttsApiKey', defaultValue: '') ?? '';
+  // =========== Provider Management ===========
 
-  set ttsApiKey(String v) => _box?.put('ttsApiKey', v);
+  List<AiProvider> getProviders() {
+    final list = <AiProvider>[];
+    for (final key in _providerBox?.keys ?? []) {
+      final raw = _providerBox?.get(key);
+      if (raw != null) {
+        try {
+          list.add(AiProvider.decode(raw));
+        } catch (_) {}
+      }
+    }
+    return list;
+  }
 
-  String get ttsRegion =>
-      _box?.get('ttsRegion', defaultValue: 'eastus') ?? 'eastus';
+  AiProvider? getProvider(String? id) {
+    if (id == null || id.isEmpty) return null;
+    final raw = _providerBox?.get(id);
+    if (raw == null) return null;
+    try {
+      return AiProvider.decode(raw);
+    } catch (_) {
+      return null;
+    }
+  }
 
-  set ttsRegion(String v) => _box?.put('ttsRegion', v);
+  Future<void> saveProvider(AiProvider p) async {
+    await _providerBox?.put(p.id, p.encode());
+  }
 
-  String get ttsVoice =>
-      _box?.get('ttsVoice', defaultValue: 'en-US-JennyNeural') ??
-      'en-US-JennyNeural';
+  Future<void> deleteProvider(String id) async {
+    await _providerBox?.delete(id);
+    // Clear references to deleted provider
+    if (ttsProviderId == id) ttsProviderId = '';
+    if (ocrProviderId == id) ocrProviderId = '';
+    if (textOptProviderId == id) textOptProviderId = '';
+  }
 
+  // =========== TTS Settings ===========
+
+  TtsMode get ttsMode {
+    final idx = _box?.get('ttsMode', defaultValue: 0) ?? 0;
+    return TtsMode.values[idx.clamp(0, TtsMode.values.length - 1)];
+  }
+
+  set ttsMode(TtsMode v) => _box?.put('ttsMode', v.index);
+
+  // Provider for traditional / LLM TTS
+  String get ttsProviderId => _box?.get('ttsProviderId', defaultValue: '') ?? '';
+  set ttsProviderId(String v) => _box?.put('ttsProviderId', v);
+
+  // Voice name (traditional: en-US-JennyNeural, LLM: alloy/nova/shimmer)
+  String get ttsVoice => _box?.get('ttsVoice', defaultValue: '') ?? '';
   set ttsVoice(String v) => _box?.put('ttsVoice', v);
 
-  double get speechRate =>
-      (_box?.get('speechRate', defaultValue: 0.4) ?? 0.4).toDouble();
+  // Model for LLM TTS (e.g. gpt-4o-mini-tts)
+  String get ttsModel => _box?.get('ttsModel', defaultValue: '') ?? '';
+  set ttsModel(String v) => _box?.put('ttsModel', v);
 
+  // Speech rate (0.1 – 1.0 for system, mapped for cloud)
+  double get speechRate =>
+      (_box?.get('speechRate', defaultValue: 0.5) ?? 0.5).toDouble();
   set speechRate(double v) => _box?.put('speechRate', v);
 
-  // ---- OCR Settings ----
+  // =========== OCR Settings ===========
 
-  OcrEngine get ocrEngine {
-    final idx = _box?.get('ocrEngine', defaultValue: 0) ?? 0;
-    return OcrEngine.values[idx.clamp(0, OcrEngine.values.length - 1)];
+  OcrMode get ocrMode {
+    final idx = _box?.get('ocrMode', defaultValue: 0) ?? 0;
+    return OcrMode.values[idx.clamp(0, OcrMode.values.length - 1)];
   }
 
-  set ocrEngine(OcrEngine v) => _box?.put('ocrEngine', v.index);
+  set ocrMode(OcrMode v) => _box?.put('ocrMode', v.index);
 
-  // ---- LLM Settings ----
+  String get ocrProviderId => _box?.get('ocrProviderId', defaultValue: '') ?? '';
+  set ocrProviderId(String v) => _box?.put('ocrProviderId', v);
+
+  String get ocrModel => _box?.get('ocrModel', defaultValue: '') ?? '';
+  set ocrModel(String v) => _box?.put('ocrModel', v);
+
+  // =========== Text Optimization ===========
 
   bool get enableTextOptimization =>
       _box?.get('enableTextOptimization', defaultValue: false) ?? false;
+  set enableTextOptimization(bool v) => _box?.put('enableTextOptimization', v);
 
-  set enableTextOptimization(bool v) =>
-      _box?.put('enableTextOptimization', v);
+  String get textOptProviderId =>
+      _box?.get('textOptProviderId', defaultValue: '') ?? '';
+  set textOptProviderId(String v) => _box?.put('textOptProviderId', v);
 
-  LlmProvider get llmProvider {
-    final idx = _box?.get('llmProvider', defaultValue: 0) ?? 0;
-    return LlmProvider.values[idx.clamp(0, LlmProvider.values.length - 1)];
-  }
-
-  set llmProvider(LlmProvider v) => _box?.put('llmProvider', v.index);
-
-  String get llmApiKey =>
-      _box?.get('llmApiKey', defaultValue: '') ?? '';
-
-  set llmApiKey(String v) => _box?.put('llmApiKey', v);
-
-  String get llmEndpoint =>
-      _box?.get('llmEndpoint', defaultValue: '') ?? '';
-
-  set llmEndpoint(String v) => _box?.put('llmEndpoint', v);
-
-  String get llmModel {
-    final saved = _box?.get('llmModel', defaultValue: '') ?? '';
-    return saved.isEmpty ? llmProvider.defaultModel : saved;
-  }
-
-  set llmModel(String v) => _box?.put('llmModel', v);
+  String get textOptModel => _box?.get('textOptModel', defaultValue: '') ?? '';
+  set textOptModel(String v) => _box?.put('textOptModel', v);
 }

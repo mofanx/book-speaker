@@ -12,10 +12,10 @@ class OcrService {
   OcrService(this._settings, this._llm);
 
   Future<String> recognizeText(File imageFile) async {
-    switch (_settings.ocrEngine) {
-      case OcrEngine.mlkit:
+    switch (_settings.ocrMode) {
+      case OcrMode.mlkit:
         return _recognizeWithMlKit(imageFile);
-      case OcrEngine.llm:
+      case OcrMode.llm:
         return _llm.ocrFromImage(imageFile);
     }
   }
