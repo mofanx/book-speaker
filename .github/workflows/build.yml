@@ -25,6 +25,12 @@ jobs:
 
       - name: Patch Android config
         run: |
+          # Patch AndroidManifest.xml for TTS queries
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            sed -i '/<application/i \    <queries>\n        <intent>\n            <action android:name="android.intent.action.TTS_SERVICE" />\n        </intent>\n    </queries>\n' "$MANIFEST"
+          fi
+
           # Detect Kotlin DSL (.kts) vs Groovy (.gradle)
           if [ -f "android/settings.gradle.kts" ]; then
             SETTINGS="android/settings.gradle.kts"
