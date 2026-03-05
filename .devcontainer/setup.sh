@@ -40,7 +40,7 @@ export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 # ---- Accept licenses & install SDK components ----
 echo "📦 Installing Android SDK components..."
 yes | sdkmanager --licenses > /dev/null 2>&1 || true
-sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
 # ---- Flutter setup ----
 flutter config --no-analytics
@@ -52,6 +52,12 @@ if [ ! -d "$WORKSPACE_DIR/android" ]; then
   echo "📦 Generating Android project files..."
   flutter create --project-name book_speaker --org com.bookspeaker .
 fi
+
+# ---- Patch Android config for plugin compatibility ----
+echo "🔧 Patching Android config..."
+sed -i 's/org.jetbrains.kotlin.android" version "[^"]*"/org.jetbrains.kotlin.android" version "2.1.0"/' android/settings.gradle
+sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle
+sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' android/app/build.gradle
 
 flutter pub get
 
