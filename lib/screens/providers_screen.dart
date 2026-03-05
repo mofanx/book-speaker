@@ -137,11 +137,13 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
   late TextEditingController _nameCtrl;
   late TextEditingController _keyCtrl;
   late TextEditingController _urlCtrl;
+  late TextEditingController _testModelCtrl;
   bool _isTesting = false;
   bool _isFetchingModels = false;
   String? _testResult;
   List<String> _models = [];
   Set<String> _favoriteModels = {};
+  String _testModel = '';
 
   @override
   void initState() {
@@ -153,6 +155,19 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
     _urlCtrl = TextEditingController(text: p?.baseUrl ?? _type.defaultBaseUrl);
     _models = p?.models.toList() ?? [];
     _favoriteModels = p?.favoriteModels.toSet() ?? {};
+    _testModel = p?.favoriteModels.isNotEmpty == true
+        ? p!.favoriteModels.first
+        : _defaultTestModel(_type);
+    _testModelCtrl = TextEditingController(text: _testModel);
+  }
+
+  static String _defaultTestModel(ProviderType type) {
+    switch (type) {
+      case ProviderType.google:
+        return 'gemini-2.0-flash';
+      default:
+        return 'gpt-4o-mini';
+    }
   }
 
   @override
@@ -160,6 +175,7 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
     _nameCtrl.dispose();
     _keyCtrl.dispose();
     _urlCtrl.dispose();
+    _testModelCtrl.dispose();
     super.dispose();
   }
 
@@ -215,12 +231,17 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
         _isFetchingModels = false;
         if (models.isNotEmpty) {
           _models = models;
+          // Auto-select first favorite as test model if not yet set
+          if (_favoriteModels.isEmpty && _testModel.isEmpty) {
+            _testModel = models.first;
+            _testModelCtrl.text = _testModel;
+          }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Successfully fetched ${models.length} models'))
+            SnackBar(content: Text('${t("fetch_models")}: ${models.length}'))
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to fetch models or no models found'))
+            SnackBar(content: Text(t('no_models_fetched')))
           );
         }
       });
@@ -231,6 +252,11 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
     if (_keyCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t('provider_key_required'))));
+      return;
+    }
+    if (_testModel.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('test_model_hint'))));
       return;
     }
 
@@ -247,24 +273,7 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
       baseUrl: _urlCtrl.text.trim(),
     );
 
-    // Pick a lightweight model for the test
-    String testModel;
-    switch (_type) {
-      case ProviderType.openai:
-        testModel = 'gpt-4o-mini';
-        break;
-      case ProviderType.google:
-        testModel = 'gemini-2.0-flash';
-        break;
-      case ProviderType.azure:
-        testModel = 'gpt-4o-mini';
-        break;
-      case ProviderType.custom:
-        testModel = 'gpt-4o-mini';
-        break;
-    }
-
-    final err = await llmService.testProvider(tmpProvider, testModel);
+    final err = await llmService.testProvider(tmpProvider, _testModel.trim());
     if (mounted) {
       setState(() {
         _isTesting = false;
@@ -273,6 +282,40 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
             : t('provider_test_failed').replaceAll('%s', err);
       });
     }
+  }
+
+  Widget _buildTestModelSelector() {
+    final favList = _favoriteModels.toList();
+    if (favList.isNotEmpty) {
+      // If current test model not in favs, add it temporarily
+      final items = favList.toList();
+      if (_testModel.isNotEmpty && !items.contains(_testModel)) {
+        items.insert(0, _testModel);
+      }
+      return DropdownButtonFormField<String>(
+        value: _testModel.isNotEmpty && items.contains(_testModel) ? _testModel : null,
+        decoration: InputDecoration(
+          labelText: t('test_model'),
+          hintText: t('test_model_hint'),
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+        items: items
+            .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+            .toList(),
+        onChanged: (v) => setState(() => _testModel = v ?? ''),
+      );
+    }
+    return TextField(
+      controller: _testModelCtrl,
+      decoration: InputDecoration(
+        labelText: t('test_model'),
+        hintText: t('test_model_hint'),
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      onChanged: (v) => _testModel = v,
+    );
   }
 
   @override
@@ -308,6 +351,11 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
                   _nameCtrl.text = _type.label;
                 }
                 _urlCtrl.text = _type.defaultBaseUrl;
+                // Reset test model to type default if no favorites
+                if (_favoriteModels.isEmpty) {
+                  _testModel = _defaultTestModel(_type);
+                  _testModelCtrl.text = _testModel;
+                }
               });
             },
           ),
@@ -344,13 +392,13 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
           ),
           const SizedBox(height: 24),
 
-          // Models section
+          // Models section (Azure uses deployments, no models endpoint)
           if (_type != ProviderType.azure) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Available Models',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(t('available_models'),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 TextButton.icon(
                   onPressed: _isFetchingModels ? null : _fetchModels,
                   icon: _isFetchingModels
@@ -359,15 +407,15 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.cloud_download),
-                  label: const Text('Fetch Models'),
+                  label: Text(t('fetch_models')),
                 ),
               ],
             ),
             if (_models.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: Text('No models fetched yet.',
-                    style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(t('no_models_fetched'),
+                    style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
               )
             else
               Container(
@@ -408,6 +456,10 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
               ),
             const SizedBox(height: 24),
           ],
+
+          // Test model selector
+          _buildTestModelSelector(),
+          const SizedBox(height: 12),
 
           // Test button
           FilledButton.icon(

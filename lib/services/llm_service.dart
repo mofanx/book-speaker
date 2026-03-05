@@ -200,18 +200,7 @@ class LlmService {
       provider: provider,
       model: model,
       messages: [
-        {
-          'role': 'system',
-          'content':
-              'You are a text formatting assistant for children\'s English textbooks. '
-              'Clean up the input text and format it as a well-structured dialogue.\n'
-              'Rules:\n'
-              '1. Each speaker\'s line should be on its own line\n'
-              '2. Use "Speaker: text" format if speakers are identifiable\n'
-              '3. Fix obvious typos and OCR artifacts\n'
-              '4. Keep the original meaning intact\n'
-              '5. Output ONLY the cleaned text, no explanations',
-        },
+        {'role': 'system', 'content': _settings.effectiveTextOptPrompt},
         {'role': 'user', 'content': rawText},
       ],
     );
@@ -234,9 +223,7 @@ class LlmService {
       messages: [
         {
           'role': 'system',
-          'content':
-              'You are an OCR assistant for children\'s English textbooks. '
-              'Extract text accurately and format as dialogue.',
+          'content': _settings.effectiveOcrPrompt,
         },
         {
           'role': 'user',

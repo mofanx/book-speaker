@@ -3,6 +3,20 @@ import '../models/ai_provider.dart';
 import '../models/settings.dart';
 
 class SettingsService {
+  static const String defaultOcrPrompt =
+      'You are an OCR assistant for children\'s English textbooks. '
+      'Extract text accurately and format as dialogue.';
+
+  static const String defaultTextOptPrompt =
+      'You are a text formatting assistant for children\'s English textbooks. '
+      'Clean up the input text and format it as a well-structured dialogue.\n'
+      'Rules:\n'
+      '1. Each speaker\'s line should be on its own line\n'
+      '2. Use "Speaker: text" format if speakers are identifiable\n'
+      '3. Fix obvious typos and OCR artifacts\n'
+      '4. Keep the original meaning intact\n'
+      '5. Output ONLY the cleaned text, no explanations';
+
   static const _boxName = 'settings';
   static const _providerBoxName = 'providers';
   Box? _box;
@@ -123,6 +137,13 @@ class SettingsService {
   String get ocrModel => _box?.get('ocrModel', defaultValue: '') ?? '';
   set ocrModel(String v) => _box?.put('ocrModel', v);
 
+  // =========== OCR Custom Prompt ===========
+
+  String get ocrPrompt => _box?.get('ocrPrompt', defaultValue: '') ?? '';
+  set ocrPrompt(String v) => _box?.put('ocrPrompt', v);
+  String get effectiveOcrPrompt =>
+      ocrPrompt.isNotEmpty ? ocrPrompt : defaultOcrPrompt;
+
   // =========== Text Optimization ===========
 
   bool get enableTextOptimization =>
@@ -135,4 +156,9 @@ class SettingsService {
 
   String get textOptModel => _box?.get('textOptModel', defaultValue: '') ?? '';
   set textOptModel(String v) => _box?.put('textOptModel', v);
+
+  String get textOptPrompt => _box?.get('textOptPrompt', defaultValue: '') ?? '';
+  set textOptPrompt(String v) => _box?.put('textOptPrompt', v);
+  String get effectiveTextOptPrompt =>
+      textOptPrompt.isNotEmpty ? textOptPrompt : defaultTextOptPrompt;
 }

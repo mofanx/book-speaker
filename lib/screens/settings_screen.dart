@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/ai_provider.dart';
 import '../models/settings.dart';
 import '../l10n/app_localizations.dart';
 import '../services/service_locator.dart';
+import '../services/settings_service.dart';
 import '../services/tts_service.dart';
 import 'providers_screen.dart';
 
@@ -19,6 +22,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _ttsModelCtrl;
   late TextEditingController _ocrModelCtrl;
   late TextEditingController _textOptModelCtrl;
+  late TextEditingController _ocrPromptCtrl;
+  late TextEditingController _textOptPromptCtrl;
   bool _ttsTesting = false;
   String? _ttsTestResult;
 
@@ -32,6 +37,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl = TextEditingController(text: s.ttsModel);
     _ocrModelCtrl = TextEditingController(text: s.ocrModel);
     _textOptModelCtrl = TextEditingController(text: s.textOptModel);
+    _ocrPromptCtrl = TextEditingController(text: s.ocrPrompt);
+    _textOptPromptCtrl = TextEditingController(text: s.textOptPrompt);
     _tts = TtsService.instance(settingsService);
     _tts.init();
   }
@@ -42,6 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl.dispose();
     _ocrModelCtrl.dispose();
     _textOptModelCtrl.dispose();
+    _ocrPromptCtrl.dispose();
+    _textOptPromptCtrl.dispose();
     super.dispose();
   }
 
@@ -61,39 +70,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           // =========== App Settings ===========
           _section(t('settings')),
-          ListTile(
-            title: const Text('Theme Mode'),
-            subtitle: Text(s.themeMode.name),
-            trailing: SegmentedButton<AppThemeMode>(
-              segments: const [
-                ButtonSegment(
-                  value: AppThemeMode.system,
-                  icon: Icon(Icons.brightness_auto),
-                  label: Text('System'),
-                ),
-                ButtonSegment(
-                  value: AppThemeMode.light,
-                  icon: Icon(Icons.light_mode),
-                  label: Text('Light'),
-                ),
-                ButtonSegment(
-                  value: AppThemeMode.dark,
-                  icon: Icon(Icons.dark_mode),
-                  label: Text('Dark'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(t('theme_mode'),
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: cs.onSurface.withOpacity(0.7))),
+                const SizedBox(height: 8),
+                SegmentedButton<AppThemeMode>(
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: [
+                    ButtonSegment(
+                      value: AppThemeMode.system,
+                      icon: const Icon(Icons.brightness_auto, size: 16),
+                      label: Text(t('theme_system')),
+                    ),
+                    ButtonSegment(
+                      value: AppThemeMode.light,
+                      icon: const Icon(Icons.light_mode, size: 16),
+                      label: Text(t('theme_light')),
+                    ),
+                    ButtonSegment(
+                      value: AppThemeMode.dark,
+                      icon: const Icon(Icons.dark_mode, size: 16),
+                      label: Text(t('theme_dark')),
+                    ),
+                  ],
+                  selected: {s.themeMode},
+                  onSelectionChanged: (Set<AppThemeMode> newSelection) {
+                    setState(() {
+                      s.themeMode = newSelection.first;
+                      S.setLocale(s.appLocale);
+                    });
+                  },
                 ),
               ],
-              selected: {s.themeMode},
-              onSelectionChanged: (Set<AppThemeMode> newSelection) {
-                setState(() {
-                  s.themeMode = newSelection.first;
-                  // The ValueListenableBuilder in main.dart will pick this up implicitly
-                  // because we rebuild S.notifier via S.setLocale when language changes,
-                  // but for theme we need a better trigger. Let's just update locale 
-                  // with the same locale to trigger a rebuild for now as a quick fix,
-                  // or ideally we should use a ValueNotifier for theme.
-                  S.setLocale(s.appLocale);
-                });
-              },
             ),
           ),
           const Divider(),
@@ -177,12 +193,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             if (s.ttsMode == TtsMode.llm)
               _modelSelector(
-                label: t('tts_model'), 
+                label: t('tts_model'),
                 selectedId: s.ttsModel,
                 providerId: s.ttsProviderId,
                 providers: providers,
-                onChanged: (v) => setState(() => s.ttsModel = v), 
-                hint: t('tts_model_hint')
+                onChanged: (v) => setState(() => s.ttsModel = v),
+                hint: t('tts_model_hint'),
+                controller: _ttsModelCtrl,
               ),
             _field(
                 t('tts_voice'),
@@ -255,14 +272,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (id) => setState(() => s.ocrProviderId = id),
             ),
             _modelSelector(
-              label: t('ocr_model'), 
-              selectedId: s.ocrModel, 
+              label: t('ocr_model'),
+              selectedId: s.ocrModel,
               providerId: s.ocrProviderId,
               providers: providers,
               onChanged: (v) => setState(() => s.ocrModel = v),
-              hint: t('ocr_model_hint')
+              hint: t('ocr_model_hint'),
+              controller: _ocrModelCtrl,
             ),
           ],
+          _buildPromptEditor(
+            ctrl: _ocrPromptCtrl,
+            label: t('ocr_custom_prompt'),
+            defaultPrompt: SettingsService.defaultOcrPrompt,
+            onSave: (v) => settingsService.ocrPrompt = v,
+          ),
           const Divider(),
 
           // =========== Text Optimization ===========
@@ -281,14 +305,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (id) => setState(() => s.textOptProviderId = id),
             ),
             _modelSelector(
-              label: t('text_opt_model'), 
+              label: t('text_opt_model'),
               selectedId: s.textOptModel,
               providerId: s.textOptProviderId,
               providers: providers,
-              onChanged: (v) => setState(() => s.textOptModel = v), 
-              hint: t('text_opt_model_hint')
+              onChanged: (v) => setState(() => s.textOptModel = v),
+              hint: t('text_opt_model_hint'),
+              controller: _textOptModelCtrl,
             ),
           ],
+          _buildPromptEditor(
+            ctrl: _textOptPromptCtrl,
+            label: t('text_opt_custom_prompt'),
+            defaultPrompt: SettingsService.defaultTextOptPrompt,
+            onSave: (v) => settingsService.textOptPrompt = v,
+          ),
           const Divider(),
 
           // =========== About ===========
@@ -297,6 +328,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.info_outline),
             title: const Text('Book Speaker'),
             subtitle: Text('v1.3.0 — ${t('app_name')}'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.code, color: Colors.black87),
+            title: Text(t('about_github')),
+            subtitle: const Text(
+              'https://github.com/mofanx/book-speaker',
+              style: TextStyle(fontSize: 12, color: Colors.blue),
+            ),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () async {
+              const url = 'https://github.com/mofanx/book-speaker';
+              if (Platform.isAndroid) {
+                const intent = AndroidIntent(
+                  action: 'action_view',
+                  data: url,
+                );
+                await intent.launch();
+              } else {
+                await Clipboard.setData(const ClipboardData(text: url));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(t('copied'))));
+                }
+              }
+            },
           ),
           const SizedBox(height: 32),
         ],
@@ -819,17 +875,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required List<AiProvider> providers,
     required ValueChanged<String> onChanged,
     required String hint,
+    required TextEditingController controller,
   }) {
+    // Keep controller text in sync
+    if (controller.text != selectedId) {
+      controller.text = selectedId;
+    }
+
     final provider = providers.where((p) => p.id == providerId).firstOrNull;
-    
+
     // If provider not found or has no favorited models, fallback to text field
     if (provider == null || provider.favoriteModels.isEmpty) {
-      return _field(
-        label, 
-        TextEditingController(text: selectedId), 
-        onChanged, 
-        hint
-      );
+      return _field(label, controller, onChanged, hint);
     }
 
     // Ensure selectedId is in the list or add it temporarily for the dropdown
@@ -841,16 +898,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: DropdownButtonFormField<String>(
-        value: selectedId.isNotEmpty ? selectedId : null,
+        value: selectedId.isNotEmpty && models.contains(selectedId)
+            ? selectedId
+            : null,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           border: const OutlineInputBorder(),
           isDense: true,
         ),
-        items: models.map((m) =>
-            DropdownMenuItem(value: m, child: Text(m))).toList(),
-        onChanged: (v) => onChanged(v ?? ''),
+        items: models
+            .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+            .toList(),
+        onChanged: (v) {
+          controller.text = v ?? '';
+          onChanged(v ?? '');
+        },
+      ),
+    );
+  }
+
+  Widget _buildPromptEditor({
+    required TextEditingController ctrl,
+    required String label,
+    required String defaultPrompt,
+    required ValueChanged<String> onSave,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500)),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: Text(t('reset_to_default'),
+                    style: const TextStyle(fontSize: 12)),
+                onPressed: () {
+                  ctrl.text = '';
+                  onSave('');
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: ctrl,
+            maxLines: 4,
+            minLines: 2,
+            decoration: InputDecoration(
+              hintText: defaultPrompt,
+              hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              contentPadding: const EdgeInsets.all(10),
+              helperText: t('custom_prompt_hint'),
+              helperStyle: const TextStyle(fontSize: 11),
+            ),
+            style: const TextStyle(fontSize: 13),
+            onChanged: onSave,
+          ),
+        ],
       ),
     );
   }

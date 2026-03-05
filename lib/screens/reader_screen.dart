@@ -27,10 +27,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isEditMode = false;
   final Set<int> _selectedIndices = {};
 
+  // Scroll
+  final _scrollController = ScrollController();
+  final List<GlobalKey> _itemKeys = [];
+
   @override
   void initState() {
     super.initState();
     _sentences = List.from(widget.lesson.sentences);
+    _syncKeys();
     _tts = TtsService.instance(settingsService);
     _speechRate = settingsService.speechRate;
     _tts.onComplete = () => _onSpeechComplete();
@@ -46,10 +51,43 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     // Don't dispose singleton TtsService; just detach callbacks
     _tts.onComplete = null;
     _tts.onStart = null;
     super.dispose();
+  }
+
+  void _syncKeys() {
+    while (_itemKeys.length < _sentences.length) {
+      _itemKeys.add(GlobalKey());
+    }
+    while (_itemKeys.length > _sentences.length) {
+      _itemKeys.removeLast();
+    }
+  }
+
+  void _scrollToIndex(int index) {
+    if (index < 0 || index >= _itemKeys.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _itemKeys[index].currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: 0.3,
+        );
+      } else if (_scrollController.hasClients) {
+        final estimate = index * 96.0;
+        _scrollController.animateTo(
+          estimate.clamp(0.0, _scrollController.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
   }
 
   // ---- TTS Playback ----
@@ -82,6 +120,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _currentIndex = index;
       _isPlaying = true;
     });
+    _scrollToIndex(index);
     await _tts.speak(_sentences[index].text);
   }
 
@@ -181,6 +220,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       }
       _selectedIndices.clear();
       _currentIndex = -1;
+      _syncKeys();
       await _saveChanges();
       setState(() {});
     }
@@ -206,6 +246,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (confirm == true) {
       _sentences.removeAt(index);
       if (_currentIndex >= _sentences.length) _currentIndex = -1;
+      _syncKeys();
       await _saveChanges();
       setState(() {});
     }
@@ -320,6 +361,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           speaker:
               speakerCtrl.text.trim().isEmpty ? null : speakerCtrl.text.trim(),
         ));
+        _syncKeys();
         await _saveChanges();
         setState(() {});
       }
@@ -334,6 +376,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final item = _sentences.removeAt(oldIndex);
       _sentences.insert(newIndex, item);
     });
+    _syncKeys();
     _saveChanges();
   }
 
@@ -407,7 +450,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // ---- Play Mode List ----
 
   Widget _buildPlayList() {
+    final cs = Theme.of(context).colorScheme;
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: _sentences.length,
       itemBuilder: (context, index) {
@@ -415,6 +460,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         final isActive = index == _currentIndex;
 
         return GestureDetector(
+          key: _itemKeys[index],
           onTap: () {
             setState(() => _playMode = PlayMode.single);
             _speakAt(index);
@@ -425,16 +471,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
             margin: const EdgeInsets.symmetric(vertical: 4),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isActive ? Colors.blue.shade50 : Colors.white,
+              color: isActive
+                  ? cs.primaryContainer.withValues(alpha: 0.5)
+                  : cs.surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isActive ? Colors.blue : Colors.grey.shade200,
+                color: isActive ? cs.primary : cs.outlineVariant,
                 width: isActive ? 2 : 1,
               ),
               boxShadow: isActive
                   ? [
                       BoxShadow(
-                        color: Colors.blue.withValues(alpha: 0.1),
+                        color: cs.primary.withValues(alpha: 0.12),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       )
@@ -446,12 +494,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: isActive && _isPlaying
-                      ? const Icon(Icons.volume_up,
-                          color: Colors.blue,
+                      ? Icon(Icons.volume_up,
+                          color: cs.primary,
                           size: 24,
-                          key: ValueKey('playing'))
+                          key: const ValueKey('playing'))
                       : Icon(Icons.play_circle_outline,
-                          color: Colors.grey[400],
+                          color: cs.onSurface.withValues(alpha: 0.35),
                           size: 24,
                           key: const ValueKey('idle')),
                 ),
@@ -466,7 +514,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
+                            color: cs.primary,
                           ),
                         ),
                       Text(
@@ -474,8 +522,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         style: TextStyle(
                           fontSize: 18,
                           height: 1.5,
-                          color:
-                              isActive ? Colors.blue[900] : Colors.black87,
+                          color: isActive
+                              ? cs.onPrimaryContainer
+                              : cs.onSurface,
                           fontWeight:
                               isActive ? FontWeight.w600 : FontWeight.normal,
                         ),
@@ -569,10 +618,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // ---- Bottom Control Bar ----
 
   Widget _buildControlBar() {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.surface,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),

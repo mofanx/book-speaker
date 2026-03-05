@@ -162,6 +162,29 @@ const _en = <String, String>{
   'select_provider': 'Select Provider',
   'no_provider_selected': 'No provider selected',
   'configure_provider_first': 'Please add an AI provider in Settings first',
+
+  // Theme mode
+  'theme_mode': 'Theme Mode',
+  'theme_system': 'System',
+  'theme_light': 'Light',
+  'theme_dark': 'Dark',
+
+  // Provider editor extras
+  'available_models': 'Available Models',
+  'fetch_models': 'Fetch Models',
+  'no_models_fetched': 'No models fetched yet',
+  'test_model': 'Test Model',
+  'test_model_hint': 'Select or enter model for testing',
+
+  // Custom prompts
+  'ocr_custom_prompt': 'Custom OCR Prompt',
+  'text_opt_custom_prompt': 'Custom Optimization Prompt',
+  'reset_to_default': 'Reset to Default',
+  'custom_prompt_hint': 'Leave empty to use the default prompt',
+
+  // About
+  'about_github': 'GitHub Repository',
+  'copied': 'Copied!',
 };
 
 const _zh = <String, String>{
@@ -292,7 +315,7 @@ const _zh = <String, String>{
   'provider_type': '服务类型',
   'provider_name': '名称',
   'provider_api_key': 'API Key',
-  'provider_base_url': 'API 基址',
+  'provider_base_url': 'API 地址',
   'provider_name_required': '请输入名称',
   'provider_key_required': '请输入API Key',
   'provider_test_success': '连接成功！',
@@ -302,4 +325,27 @@ const _zh = <String, String>{
   'select_provider': '选择服务商',
   'no_provider_selected': '未选择服务商',
   'configure_provider_first': '请先在设置中添加AI服务商',
+
+  // Theme mode
+  'theme_mode': '颜色模式',
+  'theme_system': '跟随系统',
+  'theme_light': '浅色',
+  'theme_dark': '深色',
+
+  // Provider editor extras
+  'available_models': '可用模型',
+  'fetch_models': '获取模型列表',
+  'no_models_fetched': '暂未获取模型',
+  'test_model': '测试模型',
+  'test_model_hint': '选择或输入用于测试的模型',
+
+  // Custom prompts
+  'ocr_custom_prompt': '自定义OCR提示词',
+  'text_opt_custom_prompt': '自定义优化提示词',
+  'reset_to_default': '重置为默认',
+  'custom_prompt_hint': '留空则使用默认提示词',
+
+  // About
+  'about_github': 'GitHub 项目地址',
+  'copied': '已复制！',
 };

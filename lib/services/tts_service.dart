@@ -30,6 +30,7 @@ class TtsService {
   bool _isSpeaking = false;
   bool _engineReady = false;
   bool _initialized = false;
+  bool _stoppingForSpeak = false;
   String? _error;
 
   Function()? onComplete;
@@ -115,7 +116,7 @@ class TtsService {
     _tts.setCancelHandler(() {
       debugPrint('[TTS] >> onCancel');
       _isSpeaking = false;
-      onComplete?.call();
+      if (!_stoppingForSpeak) onComplete?.call();
     });
     _tts.setPauseHandler(() {
       debugPrint('[TTS] >> onPause');
@@ -322,7 +323,9 @@ class TtsService {
   // ---- Speak ----
 
   Future<void> speak(String text) async {
+    _stoppingForSpeak = true;
     await stop();
+    _stoppingForSpeak = false;
     switch (_settings.ttsMode) {
       case TtsMode.system:
         await _speakSystemWithRetry(text);
