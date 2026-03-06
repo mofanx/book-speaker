@@ -1,7 +1,4 @@
 import 'dart:io';
-import 'package:android_intent_plus/android_intent.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../models/settings.dart';
 import '../models/ai_provider.dart';
