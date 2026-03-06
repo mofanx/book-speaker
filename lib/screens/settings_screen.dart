@@ -22,8 +22,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _ttsModelCtrl;
   late TextEditingController _ocrModelCtrl;
   late TextEditingController _textOptModelCtrl;
-  late TextEditingController _ocrPromptCtrl;
-  late TextEditingController _textOptPromptCtrl;
   bool _ttsTesting = false;
   String? _ttsTestResult;
 
@@ -37,8 +35,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl = TextEditingController(text: s.ttsModel);
     _ocrModelCtrl = TextEditingController(text: s.ocrModel);
     _textOptModelCtrl = TextEditingController(text: s.textOptModel);
-    _ocrPromptCtrl = TextEditingController(text: s.ocrPrompt);
-    _textOptPromptCtrl = TextEditingController(text: s.textOptPrompt);
     _tts = TtsService.instance(settingsService);
     _tts.init();
   }
@@ -49,8 +45,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl.dispose();
     _ocrModelCtrl.dispose();
     _textOptModelCtrl.dispose();
-    _ocrPromptCtrl.dispose();
-    _textOptPromptCtrl.dispose();
     super.dispose();
   }
 
@@ -282,10 +276,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
           _buildPromptEditor(
-            ctrl: _ocrPromptCtrl,
             label: t('ocr_custom_prompt'),
+            currentValue: settingsService.ocrPrompt,
             defaultPrompt: SettingsService.defaultOcrPrompt,
-            onSave: (v) => settingsService.ocrPrompt = v,
+            onSave: (v) {
+              setState(() {
+                settingsService.ocrPrompt = v;
+              });
+            },
           ),
           const Divider(),
 
@@ -315,10 +313,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
           _buildPromptEditor(
-            ctrl: _textOptPromptCtrl,
             label: t('text_opt_custom_prompt'),
+            currentValue: settingsService.textOptPrompt,
             defaultPrompt: SettingsService.defaultTextOptPrompt,
-            onSave: (v) => settingsService.textOptPrompt = v,
+            onSave: (v) {
+              setState(() {
+                settingsService.textOptPrompt = v;
+              });
+            },
           ),
           const Divider(),
 
@@ -919,56 +921,192 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildPromptEditor({
-    required TextEditingController ctrl,
     required String label,
+    required String currentValue,
     required String defaultPrompt,
     required ValueChanged<String> onSave,
   }) {
+    final displayValue = currentValue.isNotEmpty ? currentValue : defaultPrompt;
+    final isDefault = currentValue.isEmpty;
+    final cs = Theme.of(context).colorScheme;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(label,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 14, color: cs.onSurface.withOpacity(0.7))),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () {
+              _showPromptDialog(
+                label: label,
+                initialValue: currentValue,
+                defaultPrompt: defaultPrompt,
+                onSave: onSave,
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: cs.outlineVariant),
+                borderRadius: BorderRadius.circular(12),
+                color: cs.surfaceContainerHighest.withOpacity(0.3),
               ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact),
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(t('reset_to_default'),
-                    style: const TextStyle(fontSize: 12)),
-                onPressed: () {
-                  ctrl.text = '';
-                  onSave('');
-                },
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      displayValue,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDefault 
+                            ? cs.onSurface.withOpacity(0.5) 
+                            : cs.onSurface,
+                        fontStyle: isDefault ? FontStyle.italic : FontStyle.normal,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.edit_note, size: 20, color: cs.primary),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: ctrl,
-            maxLines: 4,
-            minLines: 2,
-            decoration: InputDecoration(
-              hintText: defaultPrompt,
-              hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
-              border: const OutlineInputBorder(),
-              isDense: true,
-              contentPadding: const EdgeInsets.all(10),
-              helperText: t('custom_prompt_hint'),
-              helperStyle: const TextStyle(fontSize: 11),
             ),
-            style: const TextStyle(fontSize: 13),
-            onChanged: onSave,
           ),
         ],
       ),
+    );
+  }
+
+  void _showPromptDialog({
+    required String label,
+    required String initialValue,
+    required String defaultPrompt,
+    required ValueChanged<String> onSave,
+  }) {
+    final ctrl = TextEditingController(text: initialValue);
+    final cs = Theme.of(context).colorScheme;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'PromptDialog',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              color: Colors.black54,
+              alignment: Alignment.center,
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 20,
+                bottom: MediaQuery.of(context).padding.bottom + 20,
+                left: 20,
+                right: 20,
+              ),
+              child: GestureDetector(
+                onTap: () {}, // consume tap to prevent dismissing when clicking inside card
+                child: Hero(
+                  tag: 'prompt_editor_$label',
+                  child: Material(
+                    borderRadius: BorderRadius.circular(16),
+                    elevation: 8,
+                    child: Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(maxHeight: 500),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.tune, color: cs.primary),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  label,
+                                  style: const TextStyle(
+                                      fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () => Navigator.of(context).pop(),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Expanded(
+                            child: TextField(
+                              controller: ctrl,
+                              maxLines: null,
+                              expands: true,
+                              textAlignVertical: TextAlignVertical.top,
+                              decoration: InputDecoration(
+                                hintText: defaultPrompt,
+                                hintStyle: TextStyle(
+                                  color: cs.onSurface.withOpacity(0.4),
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: cs.surfaceContainerHighest.withOpacity(0.2),
+                              ),
+                              style: const TextStyle(fontSize: 14, height: 1.5),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton.icon(
+                                onPressed: () {
+                                  ctrl.clear();
+                                  onSave('');
+                                  Navigator.of(context).pop();
+                                },
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: Text(t('reset_to_default')),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: cs.error,
+                                ),
+                              ),
+                              FilledButton(
+                                onPressed: () {
+                                  onSave(ctrl.text.trim());
+                                  Navigator.of(context).pop();
+                                },
+                                child: Text(t('save') ?? 'Save'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
