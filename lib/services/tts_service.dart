@@ -80,13 +80,15 @@ class TtsService {
       _tts = FlutterTts();
       _bindHandlers();
       await _kickEngine();
-      final bound = await _ensureBound(timeout: const Duration(seconds: 6));
+      final bound = await _ensureBound(timeout: const Duration(seconds: 8));
+      
+      // Even if bound == false, some devices don't report engines/languages via the API
+      // until you actually try to use them or set the engine. We'll proceed to try and 
+      // set the engine anyway instead of bailing out early.
       if (!bound) {
-        _error = 'TTS engine not responding';
-        _initialized = true; // mark tried — UI shows error
-        debugPrint('[TTS] init: engine NOT bound');
-        return;
+        debugPrint('[TTS] init: engine NOT bound via ensureBound, but continuing anyway');
       }
+      
       await _selectEngine();
       await _applyConfig();
       _initialized = true;
@@ -150,6 +152,8 @@ class TtsService {
     int attempt = 0;
     while (DateTime.now().isBefore(deadline)) {
       attempt++;
+      // We also check getEngines here, as sometimes getLanguages is empty but getEngines works,
+      // which still means the TTS service is somewhat bound.
       final langs = await _safe<dynamic>(
         _tts.getLanguages,
         timeout: const Duration(seconds: 2),
@@ -159,8 +163,19 @@ class TtsService {
         debugPrint('[TTS] engine bound (${langs.length} langs, attempt $attempt)');
         return true;
       }
-      debugPrint('[TTS] _ensureBound attempt $attempt: langs=${langs.runtimeType}(${langs is List ? langs.length : 'null'})');
-      await Future.delayed(const Duration(milliseconds: 200));
+      
+      final engines = await _safe<dynamic>(
+        _tts.getEngines,
+        timeout: const Duration(seconds: 2),
+      );
+      if (engines is List && engines.isNotEmpty) {
+        _engineReady = true;
+        debugPrint('[TTS] engine bound (via getEngines: ${engines.length}, attempt $attempt)');
+        return true;
+      }
+
+      debugPrint('[TTS] _ensureBound attempt $attempt: langs=${langs.runtimeType}(${langs is List ? langs.length : 'null'}), engines=${engines.runtimeType}');
+      await Future.delayed(const Duration(milliseconds: 300));
     }
     debugPrint('[TTS] engine NOT bound after ${timeout.inSeconds}s ($attempt attempts)');
     return false;
@@ -217,34 +232,58 @@ class TtsService {
   }
 
   Future<void> _applyConfig() async {
-    await _safe(_tts.setSpeechRate(_settings.speechRate));
-    await _safe(_tts.setPitch(_settings.pitch));
-    await _safe(_tts.setVolume(1.0));
+    // Some engines throw errors or hang when setting pitch/rate if they don't support it,
+    // so we catch and ignore any exceptions from these calls individually.
+    try { await _safe(_tts.setSpeechRate(_settings.speechRate)); } catch (_) {}
+    try { await _safe(_tts.setPitch(_settings.pitch)); } catch (_) {}
+    try { await _safe(_tts.setVolume(1.0)); } catch (_) {}
+    
     // Language: use saved preference, or device locale, or fallback
     final loc = ui.PlatformDispatcher.instance.locale;
     final defaultTag = _localeToTag(loc);
     final saved = _settings.systemTtsLanguage;
     final tag = saved.isNotEmpty ? saved : defaultTag;
     
-    bool? res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
-    // Retry once if language not ready right after engine bind
-    if (res != true) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
-    }
+    try {
+      bool? res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
+      // Retry once if language not ready right after engine bind
+      if (res != true) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
+      }
 
-    if (res == true) {
-      await _safe(_tts.setLanguage(tag));
-    } else {
-      final zh = loc.languageCode.toLowerCase().startsWith('zh');
-      final fb = zh ? 'zh-CN' : 'en-US';
-      final ok = await _safe<dynamic>(_tts.isLanguageAvailable(fb));
-      if (ok == true) await _safe(_tts.setLanguage(fb));
+      if (res == true) {
+        await _safe(_tts.setLanguage(tag));
+      } else {
+        // If requested language unavailable, try some logical fallbacks
+        final isZh = loc.languageCode.toLowerCase().startsWith('zh') || tag.toLowerCase().startsWith('zh');
+        
+        final fb1 = isZh ? 'zh-CN' : 'en-US';
+        final ok1 = await _safe<dynamic>(_tts.isLanguageAvailable(fb1));
+        if (ok1 == true) {
+          await _safe(_tts.setLanguage(fb1));
+        } else {
+          // Last resort: just try English or the very first available language
+          final ok2 = await _safe<dynamic>(_tts.isLanguageAvailable('en-US'));
+          if (ok2 == true) {
+            await _safe(_tts.setLanguage('en-US'));
+          } else {
+            // If even en-US is not available, just try to get the first language the engine supports
+            final langs = await _safe<dynamic>(_tts.getLanguages);
+            if (langs is List && langs.isNotEmpty) {
+               await _safe(_tts.setLanguage(langs.first.toString()));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[TTS] _applyConfig language error: $e');
     }
+    
     // CRITICAL: use awaitSpeakCompletion(false) — speak returns immediately,
     // completion is tracked via handlers. Prevents hang on broken engines.
-    await _safe(_tts.awaitSpeakCompletion(false));
-    await _safe(_tts.setQueueMode(1));
+    try { await _safe(_tts.awaitSpeakCompletion(false)); } catch (_) {}
+    try { await _safe(_tts.setQueueMode(1)); } catch (_) {}
   }
 
   static String _localeToTag(ui.Locale l) {
@@ -357,8 +396,7 @@ class TtsService {
     if (!_engineReady) {
       final bound = await _ensureBound(timeout: const Duration(seconds: 3));
       if (!bound) {
-        debugPrint('[TTS] _trySpeak: engine not bound, aborting');
-        return false;
+        debugPrint('[TTS] _trySpeak: engine not bound, but attempting to speak anyway');
       }
     }
 

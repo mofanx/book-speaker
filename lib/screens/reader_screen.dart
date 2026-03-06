@@ -46,7 +46,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _initTts() async {
-    await _tts.init();
+    // If there is an existing error, re-initialize to attempt recovery
+    if (_tts.error != null) {
+      await _tts.init();
+    } else if (!_tts.isInitialized) {
+      await _tts.init();
+    }
   }
 
   @override
@@ -121,6 +126,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _isPlaying = true;
     });
     _scrollToIndex(index);
+    
+    // Quick recovery attempt if TTS is in error state before speaking
+    if (_tts.error != null) {
+      await _initTts();
+    }
+    
     await _tts.speak(_sentences[index].text);
   }
 
