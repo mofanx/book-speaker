@@ -173,6 +173,8 @@ const _en = <String, String>{
   'available_models': 'Available Models',
   'fetch_models': 'Fetch Models',
   'no_models_fetched': 'No models fetched yet',
+  'search_model_hint': 'Search models...',
+  'favorite_models_hint': 'Starred models will appear in dropdowns across the app',
   'test_model': 'Test Model',
   'test_model_hint': 'Select or enter model for testing',
 
@@ -336,6 +338,8 @@ const _zh = <String, String>{
   'available_models': '可用模型',
   'fetch_models': '获取模型列表',
   'no_models_fetched': '暂未获取模型',
+  'search_model_hint': '搜索模型...',
+  'favorite_models_hint': '收藏的模型将出现在其他页面的下拉列表中',
   'test_model': '测试模型',
   'test_model_hint': '选择或输入用于测试的模型',
 

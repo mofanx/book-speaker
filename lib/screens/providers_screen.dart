@@ -138,10 +138,12 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
   late TextEditingController _keyCtrl;
   late TextEditingController _urlCtrl;
   late TextEditingController _testModelCtrl;
+  late TextEditingController _searchCtrl;
   bool _isTesting = false;
   bool _isFetchingModels = false;
   String? _testResult;
   List<String> _models = [];
+  List<String> _filteredModels = [];
   Set<String> _favoriteModels = {};
   String _testModel = '';
 
@@ -154,11 +156,13 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
     _keyCtrl = TextEditingController(text: p?.apiKey ?? '');
     _urlCtrl = TextEditingController(text: p?.baseUrl ?? _type.defaultBaseUrl);
     _models = p?.models.toList() ?? [];
+    _filteredModels = List.from(_models);
     _favoriteModels = p?.favoriteModels.toSet() ?? {};
     _testModel = p?.favoriteModels.isNotEmpty == true
         ? p!.favoriteModels.first
         : _defaultTestModel(_type);
     _testModelCtrl = TextEditingController(text: _testModel);
+    _searchCtrl = TextEditingController();
   }
 
   static String _defaultTestModel(ProviderType type) {
@@ -176,6 +180,7 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
     _keyCtrl.dispose();
     _urlCtrl.dispose();
     _testModelCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -231,6 +236,7 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
         _isFetchingModels = false;
         if (models.isNotEmpty) {
           _models = models;
+          _filteredModels = List.from(models);
           // Auto-select first favorite as test model if not yet set
           if (_favoriteModels.isEmpty && _testModel.isEmpty) {
             _testModel = models.first;
@@ -282,6 +288,18 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
             : t('provider_test_failed').replaceAll('%s', err);
       });
     }
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredModels = List.from(_models);
+      } else {
+        _filteredModels = _models
+            .where((m) => m.toLowerCase().contains(query.toLowerCase()))
+            .toList();
+      }
+    });
   }
 
   Widget _buildTestModelSelector() {
@@ -351,9 +369,24 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
                   _nameCtrl.text = _type.label;
                 }
                 _urlCtrl.text = _type.defaultBaseUrl;
-                // Reset test model to type default if no favorites
-                if (_favoriteModels.isEmpty) {
+
+                // Clear models and favorites when switching provider types manually
+                // (except when initially loading an existing provider of this type)
+                if (widget.provider?.type != _type) {
+                  _models = [];
+                  _filteredModels = [];
+                  _favoriteModels = {};
                   _testModel = _defaultTestModel(_type);
+                  _testModelCtrl.text = _testModel;
+                  _searchCtrl.clear();
+                } else {
+                  // Restore models if switching back to the existing provider's original type
+                  _models = widget.provider?.models.toList() ?? [];
+                  _filteredModels = List.from(_models);
+                  _favoriteModels = widget.provider?.favoriteModels.toSet() ?? {};
+                  _testModel = _favoriteModels.isNotEmpty 
+                      ? _favoriteModels.first 
+                      : _defaultTestModel(_type);
                   _testModelCtrl.text = _testModel;
                 }
               });
@@ -411,6 +444,12 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+            Text(
+              t('favorite_models_hint'),
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
             if (_models.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -418,41 +457,58 @@ class _ProviderEditorScreenState extends State<_ProviderEditorScreen> {
                     style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
               )
             else
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                constraints: const BoxConstraints(maxHeight: 200),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _models.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final model = _models[index];
-                    final isFav = _favoriteModels.contains(model);
-                    return ListTile(
-                      dense: true,
-                      title: Text(model, style: const TextStyle(fontSize: 14)),
-                      trailing: IconButton(
-                        icon: Icon(
-                          isFav ? Icons.star : Icons.star_border,
-                          color: isFav ? Colors.orange : Colors.grey,
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            if (isFav) {
-                              _favoriteModels.remove(model);
-                            } else {
-                              _favoriteModels.add(model);
-                            }
-                          });
-                        },
-                      ),
-                    );
-                  },
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: t('search_model_hint'),
+                      prefixIcon: const Icon(Icons.search),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                    onChanged: _onSearchChanged,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _filteredModels.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final model = _filteredModels[index];
+                        final isFav = _favoriteModels.contains(model);
+                        return ListTile(
+                          dense: true,
+                          title: Text(model, style: const TextStyle(fontSize: 14)),
+                          trailing: IconButton(
+                            icon: Icon(
+                              isFav ? Icons.star : Icons.star_border,
+                              color: isFav ? Colors.orange : Colors.grey,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                if (isFav) {
+                                  _favoriteModels.remove(model);
+                                } else {
+                                  _favoriteModels.add(model);
+                                }
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             const SizedBox(height: 24),
           ],

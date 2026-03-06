@@ -3,6 +3,7 @@ import '../models/ai_provider.dart';
 import '../models/settings.dart';
 
 class SettingsService {
+  final themeNotifier = ValueNotifier<AppThemeMode>(AppThemeMode.system);
   static const String defaultOcrPrompt =
       'You are an OCR assistant for children\'s English textbooks. '
       'Extract text accurately and format as dialogue.';
@@ -25,6 +26,7 @@ class SettingsService {
   Future<void> init() async {
     _box ??= await Hive.openBox(_boxName);
     _providerBox ??= await Hive.openBox<String>(_providerBoxName);
+    themeNotifier.value = themeMode;
   }
 
   // =========== App Settings ===========
@@ -38,10 +40,13 @@ class SettingsService {
 
   AppThemeMode get themeMode {
     final idx = _box?.get('themeMode', defaultValue: 0) ?? 0;
-    return AppThemeMode.values[idx.clamp(0, AppThemeMode.values.length - 1)];
+    return AppThemeMode.values[idx];
   }
 
-  set themeMode(AppThemeMode v) => _box?.put('themeMode', v.index);
+  set themeMode(AppThemeMode v) {
+    _box?.put('themeMode', v.index);
+    themeNotifier.value = v;
+  }
 
   // =========== Provider Management ===========
 

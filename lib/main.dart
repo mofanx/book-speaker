@@ -21,22 +21,27 @@ class BookSpeakerApp extends StatelessWidget {
     return ValueListenableBuilder(
       valueListenable: S.notifier,
       builder: (_, __, ___) {
-        final themeMode = _getFlutterThemeMode(settingsService.themeMode);
-        return MaterialApp(
-          title: 'Book Speaker',
-          debugShowCheckedModeBanner: false,
-          themeMode: themeMode,
-          theme: ThemeData(
-            colorSchemeSeed: Colors.blue,
-            useMaterial3: true,
-            brightness: Brightness.light,
-          ),
-          darkTheme: ThemeData(
-            colorSchemeSeed: Colors.blue,
-            useMaterial3: true,
-            brightness: Brightness.dark,
-          ),
-          home: const HomeScreen(),
+        return ValueListenableBuilder<AppThemeMode>(
+          valueListenable: settingsService.themeNotifier,
+          builder: (_, themeModeValue, __) {
+            final themeMode = _getFlutterThemeMode(themeModeValue);
+            return MaterialApp(
+              title: 'Book Speaker',
+              debugShowCheckedModeBanner: false,
+              themeMode: themeMode,
+              theme: ThemeData(
+                colorSchemeSeed: Colors.blue,
+                useMaterial3: true,
+                brightness: Brightness.light,
+              ),
+              darkTheme: ThemeData(
+                colorSchemeSeed: Colors.blue,
+                useMaterial3: true,
+                brightness: Brightness.dark,
+              ),
+              home: const HomeScreen(),
+            );
+          },
         );
       },
     );
