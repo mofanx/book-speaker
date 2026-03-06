@@ -71,6 +71,23 @@ const _en = <String, String>{
   'copy_to': 'Copy to',
   'root_directory': 'Root Directory',
 
+  // Data Management
+  'data_management': 'Data Management',
+  'export_backup': 'Export Backup',
+  'import_backup': 'Import/Restore Backup',
+  'export_success': 'Backup exported successfully',
+  'import_success': 'Backup imported successfully. Please restart the app.',
+  'import_confirm_title': 'Import Backup',
+  'import_confirm_content': 'This will overwrite all your current data and settings. Are you sure you want to continue?',
+  'operation_failed': 'Operation failed: %s',
+
+  // Update
+  'check_update': 'Check for Update',
+  'update_available': 'New version available: %s',
+  'already_latest': 'You are using the latest version',
+  'update_now': 'Update Now',
+  'checking_update': 'Checking for updates...',
+
   // Import
   'import_lesson': 'Import Lesson',
   'lesson_title': 'Lesson Title',
@@ -250,6 +267,23 @@ const _zh = <String, String>{
   'move_to': '移动到',
   'copy_to': '复制到',
   'root_directory': '根目录',
+
+  // Data Management
+  'data_management': '数据管理',
+  'export_backup': '导出备份',
+  'import_backup': '导入恢复',
+  'export_success': '备份导出成功',
+  'import_success': '备份导入成功，请重启应用',
+  'import_confirm_title': '导入恢复',
+  'import_confirm_content': '此操作将覆盖您当前的所有数据和设置，确定要继续吗？',
+  'operation_failed': '操作失败: %s',
+
+  // Update
+  'check_update': '检查更新',
+  'update_available': '发现新版本: %s',
+  'already_latest': '已是最新版本',
+  'update_now': '立即更新',
+  'checking_update': '检查更新中...',
 
   // Import
   'import_lesson': '导入课文',

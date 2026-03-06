@@ -2,12 +2,14 @@ import 'dart:io';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../models/ai_provider.dart';
+import 'package:flutter/material.dart';
 import '../models/settings.dart';
-import '../l10n/app_localizations.dart';
+import '../models/ai_provider.dart';
 import '../services/service_locator.dart';
-import '../services/settings_service.dart';
 import '../services/tts_service.dart';
+import '../services/backup_service.dart';
+import '../services/update_service.dart';
+import '../l10n/app_localizations.dart';
 import 'providers_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -50,7 +52,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   List<AiProvider> get _providers => settingsService.getProviders();
 
-  // ---- Build ----
+  // ---- Backup & Restore ----
+
+  Future<void> _exportBackup() async {
+    final result = await backupService.exportData();
+    if (!mounted) return;
+    
+    if (result == 'success') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('export_success'))),
+      );
+    } else if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('operation_failed').replaceAll('%s', result))),
+      );
+    }
+  }
+
+  Future<void> _importBackup() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('import_confirm_title')),
+        content: Text(t('import_confirm_content')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('confirm')),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final result = await backupService.importData();
+    if (!mounted) return;
+
+    if (result == 'success') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('import_success'))),
+      );
+      // Data changed significantly, trigger a full reload
+      setState(() {});
+    } else if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('operation_failed').replaceAll('%s', result))),
+      );
+    }
+  }
+
+  // ---- Update Check ----
+
+  Future<void> _checkForUpdate() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Text(t('checking_update')),
+          ],
+        ),
+      ),
+    );
+
+    final info = await updateService.checkForUpdate();
+    if (!mounted) return;
+    
+    Navigator.pop(context); // close loading dialog
+
+    if (info != null) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(t('update_available').replaceAll('%s', info.latestVersion)),
+          content: SingleChildScrollView(
+            child: Text(info.releaseNotes),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t('cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                updateService.launchDownloadUrl(info.downloadUrl);
+              },
+              child: Text(t('update_now')),
+            ),
+          ],
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('already_latest'))),
+      );
+    }
+  }
+
+  // ---- Builders ----
 
   @override
   Widget build(BuildContext context) {
@@ -324,12 +432,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const Divider(),
 
+          // =========== Data Management ===========
+          _section(t('data_management')),
+          ListTile(
+            leading: const Icon(Icons.upload_file),
+            title: Text(t('export_backup')),
+            onTap: _exportBackup,
+          ),
+          ListTile(
+            leading: const Icon(Icons.download),
+            title: Text(t('import_backup')),
+            onTap: _importBackup,
+          ),
+          const Divider(),
+
           // =========== About ===========
           _section(t('about')),
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Book Speaker'),
             subtitle: Text('v1.3.0 — ${t('app_name')}'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.system_update),
+            title: Text(t('check_update')),
+            onTap: _checkForUpdate,
           ),
           ListTile(
             leading: const Icon(Icons.code, color: Colors.black87),
