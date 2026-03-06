@@ -30,12 +30,14 @@ class Lesson {
   final String title;
   final List<Sentence> sentences;
   final DateTime createdAt;
+  final String? folderId;
 
   Lesson({
     required this.id,
     required this.title,
     required this.sentences,
     required this.createdAt,
+    this.folderId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -43,6 +45,7 @@ class Lesson {
         'title': title,
         'sentences': sentences.map((s) => s.toJson()).toList(),
         'createdAt': createdAt.toIso8601String(),
+        if (folderId != null) 'folderId': folderId,
       };
 
   factory Lesson.fromJson(Map<String, dynamic> json) => Lesson(
@@ -52,6 +55,7 @@ class Lesson {
             .map((s) => Sentence.fromJson(s as Map<String, dynamic>))
             .toList(),
         createdAt: DateTime.parse(json['createdAt'] as String),
+        folderId: json['folderId'] as String?,
       );
 
   String toJsonString() => jsonEncode(toJson());

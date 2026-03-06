@@ -7,7 +7,9 @@ import '../services/ocr_service.dart';
 import '../services/service_locator.dart';
 
 class ImportScreen extends StatefulWidget {
-  const ImportScreen({super.key});
+  final String? folderId;
+
+  const ImportScreen({super.key, this.folderId});
 
   @override
   State<ImportScreen> createState() => _ImportScreenState();
@@ -128,6 +130,7 @@ class _ImportScreenState extends State<ImportScreen> {
       title: title,
       sentences: sentences,
       createdAt: DateTime.now(),
+      folderId: widget.folderId,
     );
 
     await storageService.saveLesson(lesson);
