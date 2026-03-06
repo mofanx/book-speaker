@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:android_intent_plus/android_intent.dart';
 import '../models/settings.dart';
 import '../models/ai_provider.dart';
 import '../services/service_locator.dart';
+import '../services/settings_service.dart';
 import '../services/tts_service.dart';
 import '../services/backup_service.dart';
 import '../services/update_service.dart';
@@ -466,13 +469,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () async {
               const url = 'https://github.com/mofanx/book-speaker';
               if (Platform.isAndroid) {
-                const intent = AndroidIntent(
-                  action: 'action_view',
+                final intent = AndroidIntent(
+                  action: 'android.intent.action.VIEW',
                   data: url,
                 );
                 await intent.launch();
               } else {
-                await Clipboard.setData(const ClipboardData(text: url));
+                await Clipboard.setData(ClipboardData(text: url));
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(t('copied'))));
@@ -1217,7 +1220,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   onSave(ctrl.text.trim());
                                   Navigator.of(context).pop();
                                 },
-                                child: Text(t('save') ?? 'Save'),
+                                child: Text(t('save')),
                               ),
                             ],
                           ),

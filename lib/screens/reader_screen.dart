@@ -397,6 +397,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       title: widget.lesson.title,
       sentences: _sentences,
       createdAt: widget.lesson.createdAt,
+      folderId: widget.lesson.folderId,
     );
     await storageService.saveLesson(updated);
   }

@@ -651,7 +651,7 @@ class TtsService {
   static Future<bool> openSystemTtsSettings() async {
     if (!Platform.isAndroid) return false;
     try {
-      const intent = AndroidIntent(
+      final intent = AndroidIntent(
         action: 'com.android.settings.TTS_SETTINGS',
       );
       await intent.launch();
