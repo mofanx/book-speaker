@@ -608,6 +608,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               InkWell(
                 onTap: () async {
                   await TtsService.openSystemTtsSettings();
+                  // Force re-init when user returns from system settings
+                  // so we pick up the newly configured engine/language
+                  await _tts.forceReinit();
+                  if (mounted) setState(() {});
                 },
                 borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(12)),

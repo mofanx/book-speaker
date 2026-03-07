@@ -58,6 +58,20 @@ class TtsService {
     await _initSystemTts();
   }
 
+  /// Force re-initialization. Call after returning from system TTS settings
+  /// so the app picks up whatever engine/language the user just configured.
+  Future<void> forceReinit() async {
+    debugPrint('[TTS] forceReinit requested');
+    _initialized = false;
+    _engineReady = false;
+    _error = null;
+    // Clear saved engine/language so we use the system default
+    _settings.systemTtsEngine = '';
+    _settings.systemTtsLanguage = '';
+    await _safe(_tts.stop(), timeout: const Duration(seconds: 1));
+    await _initSystemTts();
+  }
+
   // ---- Timeout helper: prevents any native call from hanging ----
 
   Future<T?> _safe<T>(Future<T> call,
@@ -82,14 +96,19 @@ class TtsService {
       await _kickEngine();
       final bound = await _ensureBound(timeout: const Duration(seconds: 8));
       
-      // Even if bound == false, some devices don't report engines/languages via the API
-      // until you actually try to use them or set the engine. We'll proceed to try and 
-      // set the engine anyway instead of bailing out early.
       if (!bound) {
         debugPrint('[TTS] init: engine NOT bound via ensureBound, but continuing anyway');
       }
       
-      await _selectEngine();
+      // Only call _selectEngine if user has explicitly saved an engine preference.
+      // Otherwise let FlutterTts use the system default — avoids overriding
+      // whatever the user configured in Android system TTS settings.
+      final savedEngine = _settings.systemTtsEngine;
+      if (savedEngine.isNotEmpty) {
+        await _selectEngine();
+      } else {
+        debugPrint('[TTS] init: no saved engine pref, using system default');
+      }
       await _applyConfig();
       _initialized = true;
       _error = null;
@@ -648,6 +667,8 @@ class TtsService {
   }
 
   /// Open Android system TTS settings.
+  /// Returns true if launched successfully. Caller should call
+  /// [forceReinit] when the user returns from system settings.
   static Future<bool> openSystemTtsSettings() async {
     if (!Platform.isAndroid) return false;
     try {
