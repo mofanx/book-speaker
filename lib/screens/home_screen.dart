@@ -75,12 +75,89 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _renameLesson(Lesson lesson) async {
+    final ctrl = TextEditingController(text: lesson.title);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('rename')),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: t('rename_hint'),
+            labelText: t('name'),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text(t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: Text(t('save')),
+          ),
+        ],
+      ),
+    );
+    if (newName != null && newName.isNotEmpty && newName != lesson.title) {
+      await storageService.saveLesson(Lesson(
+        id: lesson.id,
+        title: newName,
+        sentences: lesson.sentences,
+        createdAt: lesson.createdAt,
+        folderId: lesson.folderId,
+      ));
+      _loadData();
+    }
+  }
+
+  Future<void> _renameFolder(Folder folder) async {
+    final ctrl = TextEditingController(text: folder.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('rename')),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: t('rename_hint'),
+            labelText: t('name'),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text(t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: Text(t('save')),
+          ),
+        ],
+      ),
+    );
+    if (newName != null && newName.isNotEmpty && newName != folder.name) {
+      await storageService.saveFolder(Folder(
+        id: folder.id,
+        name: newName,
+        parentId: folder.parentId,
+        createdAt: folder.createdAt,
+      ));
+      _loadData();
+    }
+  }
+
   Future<void> _deleteLesson(Lesson lesson) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(t('delete_lesson')),
-        content: Text(t('delete_lesson_confirm').replaceAll('%s', lesson.title)),
+        title: Text(t('delete_content')),
+        content: Text(t('delete_content_confirm').replaceAll('%s', lesson.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -174,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.note_add),
-              title: Text(t('add_dialogue')),
+              title: Text(t('add_content')),
               onTap: () async {
                 Navigator.pop(ctx);
                 final result = await Navigator.push<bool>(
@@ -249,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         size: 80, color: Colors.grey[300]),
                       const SizedBox(height: 16),
                       Text(
-                          widget.folder == null ? t('no_lessons') : t('folder_empty'),
+                          widget.folder == null ? t('no_content') : t('folder_empty'),
                           style: TextStyle(
                               fontSize: 18, color: Colors.grey[500])),
                       const SizedBox(height: 8),
@@ -297,9 +374,15 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(folder.name, style: const TextStyle(fontWeight: FontWeight.bold)),
         trailing: _isSelectionMode 
             ? null 
-            : IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: () => _deleteFolder(folder),
+            : PopupMenuButton<String>(
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'rename', child: Text(t('rename'))),
+                  PopupMenuItem(value: 'delete', child: Text(t('delete'), style: const TextStyle(color: Colors.red))),
+                ],
+                onSelected: (v) {
+                  if (v == 'rename') _renameFolder(folder);
+                  if (v == 'delete') _deleteFolder(folder);
+                },
               ),
         onTap: () {
           if (_isSelectionMode) {
@@ -337,9 +420,15 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: Text(t('sentences_detected').replaceAll('%d', '${lesson.sentences.length}')),
         trailing: _isSelectionMode
             ? null
-            : IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                onPressed: () => _deleteLesson(lesson),
+            : PopupMenuButton<String>(
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'rename', child: Text(t('rename'))),
+                  PopupMenuItem(value: 'delete', child: Text(t('delete'), style: const TextStyle(color: Colors.red))),
+                ],
+                onSelected: (v) {
+                  if (v == 'rename') _renameLesson(lesson);
+                  if (v == 'delete') _deleteLesson(lesson);
+                },
               ),
         onTap: () async {
           if (_isSelectionMode) {

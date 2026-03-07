@@ -50,18 +50,20 @@ const _en = <String, String>{
   'name': 'Name',
 
   // Home
-  'no_lessons': 'No lessons yet',
-  'tap_add_lesson': 'Tap + to add your first lesson',
+  'no_content': 'No content yet',
+  'tap_add_content': 'Tap + to add your first content',
   'home_empty': 'Tap + to add content',
-  'add_dialogue': 'Add Dialogue',
+  'add_content': 'Add Content',
   'add_folder': 'Add Folder',
   'new_folder': 'New Folder',
   'folder_name': 'Folder Name',
   'folder_name_hint': 'Enter folder name',
   'folder_empty': 'Folder is empty',
   'create': 'Create',
-  'delete_lesson': 'Delete Lesson',
-  'delete_lesson_confirm': 'Delete "%s"?',
+  'rename': 'Rename',
+  'rename_hint': 'Enter new name',
+  'delete_content': 'Delete Content',
+  'delete_content_confirm': 'Delete "%s"?',
   'delete_folder_confirm': 'Delete folder "%s" and all its contents?',
   'delete_selected_confirm': 'Delete selected items?',
   'selected': 'selected',
@@ -89,9 +91,9 @@ const _en = <String, String>{
   'checking_update': 'Checking for updates...',
 
   // Import
-  'import_lesson': 'Import Lesson',
-  'lesson_title': 'Lesson Title',
-  'lesson_title_hint': 'e.g. Unit 3 - At the Zoo',
+  'import_content': 'Import Content',
+  'content_title': 'Title',
+  'content_title_hint': 'e.g. Unit 3 - At the Zoo',
   'take_photo': 'Take Photo',
   'from_gallery': 'From Gallery',
   'paste_text_hint': 'Or paste dialogue text below:',
@@ -125,6 +127,13 @@ const _en = <String, String>{
   'add_sentence': 'Add Sentence',
   'speaker_optional': 'Speaker (optional)',
   'text': 'Text',
+  'merge_sentences': 'Merge',
+  'split_sentence': 'Split',
+  'translate': 'Translate',
+  'translate_all': 'Translate All',
+  'translating': 'Translating...',
+  'translation_failed': 'Translation failed',
+  'hide_translation': 'Hide Translation',
 
   // Settings
   'settings_language': 'App Language',
@@ -174,6 +183,15 @@ const _en = <String, String>{
   'text_opt_provider': 'Provider',
   'text_opt_model': 'Model',
   'text_opt_model_hint': 'e.g. gpt-4o-mini',
+
+  // Translation
+  'settings_translation': 'Translation',
+  'translation_provider': 'Translation Provider',
+  'translation_model': 'Translation Model',
+  'translation_model_hint': 'e.g. gpt-4o-mini',
+  'translation_target_lang': 'Target Language',
+  'translation_target_zh': 'Chinese',
+  'translation_target_en': 'English',
 
   // Providers
   'providers_title': 'AI Providers',
@@ -247,18 +265,20 @@ const _zh = <String, String>{
   'name': '名称',
 
   // Home
-  'no_lessons': '暂无课文',
-  'tap_add_lesson': '点击 + 添加第一篇课文',
+  'no_content': '暂无内容',
+  'tap_add_content': '点击 + 添加第一条内容',
   'home_empty': '点击 + 添加内容',
-  'add_dialogue': '添加对话',
+  'add_content': '添加内容',
   'add_folder': '添加文件夹',
   'new_folder': '新建文件夹',
   'folder_name': '文件夹名称',
   'folder_name_hint': '输入文件夹名称',
   'folder_empty': '文件夹为空',
   'create': '创建',
-  'delete_lesson': '删除课文',
-  'delete_lesson_confirm': '确定删除 "%s"？',
+  'rename': '重命名',
+  'rename_hint': '输入新名称',
+  'delete_content': '删除内容',
+  'delete_content_confirm': '确定删除 "%s"？',
   'delete_folder_confirm': '确定删除文件夹 "%s" 及其中所有内容？',
   'delete_selected_confirm': '确定删除选中的项？',
   'selected': '项已选',
@@ -286,9 +306,9 @@ const _zh = <String, String>{
   'checking_update': '检查更新中...',
 
   // Import
-  'import_lesson': '导入课文',
-  'lesson_title': '课文标题',
-  'lesson_title_hint': '例如：第三单元 - 在动物园',
+  'import_content': '导入内容',
+  'content_title': '标题',
+  'content_title_hint': '例如：第三单元 - 在动物园',
   'take_photo': '拍照',
   'from_gallery': '从相册',
   'paste_text_hint': '或粘贴对话文本：',
@@ -322,6 +342,13 @@ const _zh = <String, String>{
   'add_sentence': '添加句子',
   'speaker_optional': '说话人（可选）',
   'text': '文本',
+  'merge_sentences': '合并',
+  'split_sentence': '切分',
+  'translate': '翻译',
+  'translate_all': '全部翻译',
+  'translating': '翻译中...',
+  'translation_failed': '翻译失败',
+  'hide_translation': '隐藏翻译',
 
   // Settings
   'settings_language': '应用语言',
@@ -371,6 +398,15 @@ const _zh = <String, String>{
   'text_opt_provider': '服务商',
   'text_opt_model': '模型',
   'text_opt_model_hint': '例如 gpt-4o-mini',
+
+  // Translation
+  'settings_translation': '翻译',
+  'translation_provider': '翻译服务商',
+  'translation_model': '翻译模型',
+  'translation_model_hint': '例如 gpt-4o-mini',
+  'translation_target_lang': '目标语言',
+  'translation_target_zh': '中文',
+  'translation_target_en': '英语',
 
   // Providers
   'providers_title': 'AI服务商',

@@ -245,6 +245,31 @@ class LlmService {
     );
   }
 
+  // ---- Convenience: translate text ----
+
+  Future<String> translateText(String text, String targetLang) async {
+    final provider = _settings.getProvider(_settings.translationProviderId);
+    if (provider == null) throw Exception('No translation provider configured');
+    final model = _settings.translationModel;
+    if (model.isEmpty) throw Exception('No translation model configured');
+
+    final langName = targetLang == 'zh' ? 'Chinese' : 'English';
+
+    return call(
+      provider: provider,
+      model: model,
+      messages: [
+        {
+          'role': 'system',
+          'content':
+              'You are a translator. Translate the given text to $langName. '
+              'Output ONLY the translation, no explanations or extra text.',
+        },
+        {'role': 'user', 'content': text},
+      ],
+    );
+  }
+
   // ---- Test connection ----
 
   Future<String?> testProvider(AiProvider provider, String model) async {

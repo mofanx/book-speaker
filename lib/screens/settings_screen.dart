@@ -24,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _ttsModelCtrl;
   late TextEditingController _ocrModelCtrl;
   late TextEditingController _textOptModelCtrl;
+  late TextEditingController _translationModelCtrl;
   bool _ttsTesting = false;
   String? _ttsTestResult;
 
@@ -37,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl = TextEditingController(text: s.ttsModel);
     _ocrModelCtrl = TextEditingController(text: s.ocrModel);
     _textOptModelCtrl = TextEditingController(text: s.textOptModel);
+    _translationModelCtrl = TextEditingController(text: s.translationModel);
     _tts = TtsService.instance(settingsService);
     _tts.init();
   }
@@ -47,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsModelCtrl.dispose();
     _ocrModelCtrl.dispose();
     _textOptModelCtrl.dispose();
+    _translationModelCtrl.dispose();
     super.dispose();
   }
 
@@ -279,7 +282,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (v) => setState(() => s.ttsMode = v),
           ),
 
-          // System TTS: iOS-style card with config + test
+          // System TTS: simplified - only show status + open system settings
           if (s.ttsMode == TtsMode.system) ...[
             const SizedBox(height: 4),
             _buildSystemTtsCard(cs),
@@ -432,6 +435,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const Divider(),
 
+          // =========== Translation ===========
+          _section(t('settings_translation')),
+          _providerSelector(
+            label: t('translation_provider'),
+            selectedId: s.translationProviderId,
+            providers: providers,
+            onChanged: (id) => setState(() => s.translationProviderId = id),
+          ),
+          if (s.translationProviderId.isNotEmpty)
+            _modelSelector(
+              label: t('translation_model'),
+              selectedId: s.translationModel,
+              providerId: s.translationProviderId,
+              providers: providers,
+              onChanged: (v) => setState(() => s.translationModel = v),
+              hint: t('translation_model_hint'),
+              controller: _translationModelCtrl,
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: DropdownButtonFormField<String>(
+              value: s.translationTargetLang,
+              decoration: InputDecoration(
+                labelText: t('translation_target_lang'),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                DropdownMenuItem(value: 'zh', child: Text(t('translation_target_zh'))),
+                DropdownMenuItem(value: 'en', child: Text(t('translation_target_en'))),
+              ],
+              onChanged: (v) => setState(() => s.translationTargetLang = v ?? 'zh'),
+            ),
+          ),
+          const Divider(),
+
           // =========== Data Management ===========
           _section(t('data_management')),
           ListTile(
@@ -489,7 +528,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ---- System TTS Card (Kelivo-style) ----
+  // ---- System TTS Card (simplified) ----
 
   Widget _buildSystemTtsCard(ColorScheme cs) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -512,7 +551,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         child: Column(
           children: [
-            // System TTS row
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
               child: Row(
@@ -556,28 +594,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ),
-                  // Test speak button
-                  IconButton(
-                    icon: const Icon(Icons.volume_up, size: 20),
-                    tooltip: t('tts_test'),
-                    onPressed: available
-                        ? () async {
-                            await _tts.testSystemSpeak('Hello, this is a test.');
-                          }
-                        : null,
-                  ),
-                  // Config button
-                  IconButton(
-                    icon: const Icon(Icons.tune, size: 20),
-                    tooltip: t('tts_system_config'),
-                    onPressed: available
-                        ? () => _showSystemTtsConfigSheet(context)
-                        : null,
-                  ),
                 ],
               ),
             ),
-            // Open system settings
             if (Platform.isAndroid) ...[
               Divider(
                 height: 1,
@@ -619,274 +638,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---- System TTS Config Bottom Sheet ----
-
-  void _showSystemTtsConfigSheet(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    double rate = _tts.rate;
-    double pitch = _tts.pitch;
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: false,
-      backgroundColor: cs.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(t('tts_system_config'),
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w700)),
-                ),
-                const SizedBox(height: 10),
-                // Engine selector
-                FutureBuilder<List<String>>(
-                  future: _tts.getEngines(),
-                  builder: (context, snap) {
-                    final engines = snap.data ?? const <String>[];
-                    final cur = _tts.engineId.isNotEmpty
-                        ? _tts.engineId
-                        : (engines.isNotEmpty ? engines.first : '');
-                    return _sheetSelectRow(
-                      context,
-                      label: t('tts_engine'),
-                      value: cur.isEmpty ? t('tts_engine_default') : _engineDisplayName(cur),
-                      options: engines,
-                      displayName: _engineDisplayName,
-                      onSelected: (picked) async {
-                        await _tts.setEngineId(picked);
-                        (ctx as Element).markNeedsBuild();
-                        if (mounted) setState(() {});
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 4),
-                // Language selector
-                FutureBuilder<List<String>>(
-                  future: _tts.getLanguages(),
-                  builder: (context, snap) {
-                    final langs = snap.data ?? const <String>[];
-                    final cur = _tts.languageTag.isNotEmpty
-                        ? _tts.languageTag
-                        : (langs.contains('zh-CN')
-                            ? 'zh-CN'
-                            : (langs.contains('en-US')
-                                ? 'en-US'
-                                : (langs.isNotEmpty ? langs.first : '')));
-                    return _sheetSelectRow(
-                      context,
-                      label: t('tts_language'),
-                      value: cur.isEmpty ? t('tts_engine_default') : cur,
-                      options: langs,
-                      onSelected: (picked) async {
-                        await _tts.setLanguageTag(picked);
-                        (ctx as Element).markNeedsBuild();
-                        if (mounted) setState(() {});
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 8),
-                // Speech rate slider
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(t('tts_speech_rate'),
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: cs.onSurface.withOpacity(0.7))),
-                ),
-                StatefulBuilder(
-                  builder: (ctx2, setSlider) {
-                    return Slider(
-                      value: rate,
-                      min: 0.1,
-                      max: 1.0,
-                      divisions: 9,
-                      label: '${(rate * 2).toStringAsFixed(1)}x',
-                      onChanged: (v) {
-                        setSlider(() => rate = v);
-                      },
-                      onChangeEnd: (v) async {
-                        await _tts.setRate(v);
-                        if (mounted) setState(() {});
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 4),
-                // Pitch slider
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(t('tts_pitch'),
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: cs.onSurface.withOpacity(0.7))),
-                ),
-                StatefulBuilder(
-                  builder: (ctx2, setSlider) {
-                    return Slider(
-                      value: pitch,
-                      min: 0.5,
-                      max: 2.0,
-                      divisions: 15,
-                      label: pitch.toStringAsFixed(1),
-                      onChanged: (v) {
-                        setSlider(() => pitch = v);
-                      },
-                      onChangeEnd: (v) async {
-                        await _tts.setPitch(v);
-                        if (mounted) setState(() {});
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => Navigator.of(ctx).maybePop(),
-                    icon: const Icon(Icons.check, size: 16),
-                    label: Text(t('done')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ---- Sheet select row (Kelivo-style) ----
-
-  Widget _sheetSelectRow(
-    BuildContext context, {
-    required String label,
-    required String value,
-    required List<String> options,
-    String Function(String)? displayName,
-    required Future<void> Function(String picked) onSelected,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: options.isEmpty
-          ? null
-          : () async {
-              final picked = await showModalBottomSheet<String>(
-                context: context,
-                backgroundColor: cs.surface,
-                shape: const RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                builder: (ctx2) {
-                  return SafeArea(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(ctx2).size.height * 0.6,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(height: 8),
-                          Center(
-                            child: Container(
-                              width: 40,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: cs.onSurface.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Flexible(
-                            child: ListView.separated(
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              separatorBuilder: (_, __) => Divider(
-                                height: 1,
-                                thickness: 0.6,
-                                indent: 16,
-                                endIndent: 16,
-                                color: cs.outlineVariant.withOpacity(0.18),
-                              ),
-                              itemBuilder: (_, i) {
-                                final display = displayName != null
-                                    ? displayName(options[i])
-                                    : options[i];
-                                return ListTile(
-                                  title: Text(display,
-                                      style: const TextStyle(fontSize: 15)),
-                                  trailing: options[i] == value
-                                      ? Icon(Icons.check,
-                                          size: 18, color: cs.primary)
-                                      : null,
-                                  onTap: () =>
-                                      Navigator.of(ctx2).pop(options[i]),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-              if (picked != null && picked.isNotEmpty) {
-                await onSelected(picked);
-              }
-            },
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 15,
-                      color: cs.onSurface.withOpacity(0.9))),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Text(
-                displayName != null ? displayName(value) : value,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: cs.onSurface.withOpacity(0.6)),
-              ),
-            ),
-            Icon(Icons.chevron_right,
-                size: 16, color: cs.onSurface.withOpacity(0.4)),
           ],
         ),
       ),
@@ -1148,7 +899,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     elevation: 8,
                     child: Container(
                       width: double.infinity,
-                      constraints: const BoxConstraints(maxHeight: 500),
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.75,
+                      ),
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: cs.surface,

@@ -145,7 +145,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(t('import_lesson')),
+        title: Text(t('import_content')),
         actions: [
           TextButton.icon(
             onPressed: (_isProcessing || _isOptimizing) ? null : _save,
@@ -162,8 +162,8 @@ class _ImportScreenState extends State<ImportScreen> {
             TextField(
               controller: _titleController,
               decoration: InputDecoration(
-                labelText: t('lesson_title'),
-                hintText: t('lesson_title_hint'),
+                labelText: t('content_title'),
+                hintText: t('content_title_hint'),
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.title),
               ),

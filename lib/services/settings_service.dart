@@ -167,4 +167,18 @@ class SettingsService {
   set textOptPrompt(String v) => _box?.put('textOptPrompt', v);
   String get effectiveTextOptPrompt =>
       textOptPrompt.isNotEmpty ? textOptPrompt : defaultTextOptPrompt;
+
+  // =========== Translation Settings ===========
+
+  String get translationProviderId =>
+      _box?.get('translationProviderId', defaultValue: '') ?? '';
+  set translationProviderId(String v) => _box?.put('translationProviderId', v);
+
+  String get translationModel =>
+      _box?.get('translationModel', defaultValue: '') ?? '';
+  set translationModel(String v) => _box?.put('translationModel', v);
+
+  String get translationTargetLang =>
+      _box?.get('translationTargetLang', defaultValue: 'zh') ?? 'zh';
+  set translationTargetLang(String v) => _box?.put('translationTargetLang', v);
 }

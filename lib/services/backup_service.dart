@@ -15,15 +15,28 @@ class BackupService {
     'providers',
   ];
 
+  BoxBase _getOpenBox(String boxName) {
+    // Boxes may already be open with a specific type (Box<String>).
+    // Use Hive.box<String>() for known String boxes to avoid type conflict.
+    if (Hive.isBoxOpen(boxName)) {
+      try {
+        return Hive.box<String>(boxName);
+      } catch (_) {
+        return Hive.box(boxName);
+      }
+    }
+    throw Exception('Box "$boxName" is not open');
+  }
+
   Future<String?> exportData() async {
     try {
       final Map<String, dynamic> backupData = {};
 
       for (final boxName in _boxesToBackup) {
-        final box = await Hive.openBox<dynamic>(boxName);
+        final box = _getOpenBox(boxName);
         final Map<String, dynamic> boxData = {};
         for (final key in box.keys) {
-          boxData[key.toString()] = box.get(key);
+          boxData[key.toString()] = (box as Box).get(key);
         }
         backupData[boxName] = boxData;
       }
@@ -65,12 +78,11 @@ class BackupService {
 
         for (final boxName in _boxesToBackup) {
           if (backupData.containsKey(boxName)) {
-            final box = await Hive.openBox<dynamic>(boxName);
+            final box = _getOpenBox(boxName) as Box;
             await box.clear();
             
             final Map<String, dynamic> boxData = backupData[boxName];
             for (final entry in boxData.entries) {
-              // Convert string keys back to original types if necessary, though Hive usually handles string keys well
               await box.put(entry.key, entry.value);
             }
           }

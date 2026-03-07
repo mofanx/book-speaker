@@ -100,12 +100,38 @@ class Lesson {
   }
 
   /// Split a text block into sentences by terminal punctuation (.!?)
+  /// Short fragments (< 20 chars) are merged with the next sentence to
+  /// avoid overly fragmented readings.
   static List<String> _splitBySentence(String text) {
-    final parts = text
+    final raw = text
         .split(RegExp(r'(?<=[.!?])\s+'))
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
-    return parts.isEmpty ? [text] : parts;
+    if (raw.isEmpty) return [text];
+    if (raw.length <= 1) return raw;
+
+    // Merge short fragments with the following sentence
+    final merged = <String>[];
+    String buffer = '';
+    for (final part in raw) {
+      if (buffer.isEmpty) {
+        buffer = part;
+      } else {
+        buffer = '$buffer $part';
+      }
+      if (buffer.length >= 20) {
+        merged.add(buffer);
+        buffer = '';
+      }
+    }
+    if (buffer.isNotEmpty) {
+      if (merged.isNotEmpty) {
+        merged.last = '${merged.last} $buffer';
+      } else {
+        merged.add(buffer);
+      }
+    }
+    return merged;
   }
 }

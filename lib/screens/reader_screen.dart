@@ -3,6 +3,7 @@ import '../models/lesson.dart';
 import '../l10n/app_localizations.dart';
 import '../services/tts_service.dart';
 import '../services/service_locator.dart';
+import '../services/llm_service.dart';
 
 enum PlayMode { single, continuous, loop }
 
@@ -26,6 +27,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // Edit mode
   bool _isEditMode = false;
   final Set<int> _selectedIndices = {};
+
+  // Translation
+  final Map<int, String> _translations = {};
+  bool _showTranslations = false;
+  bool _isTranslating = false;
 
   // Scroll
   final _scrollController = ScrollController();
@@ -203,6 +209,50 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _selectedIndices.addAll(List.generate(_sentences.length, (i) => i));
       }
     });
+  }
+
+  Future<void> _mergeSelected() async {
+    if (_selectedIndices.length < 2) return;
+    final sorted = _selectedIndices.toList()..sort();
+    final merged = sorted.map((i) => _sentences[i].text).join(' ');
+    final speaker = _sentences[sorted.first].speaker;
+    // Remove from end to start
+    for (int i = sorted.length - 1; i >= 1; i--) {
+      _sentences.removeAt(sorted[i]);
+    }
+    _sentences[sorted.first] = Sentence(
+      text: merged,
+      speaker: speaker,
+    );
+    _selectedIndices.clear();
+    _currentIndex = -1;
+    _syncKeys();
+    await _saveChanges();
+    setState(() {});
+  }
+
+  Future<void> _splitSentence(int index) async {
+    final sentence = _sentences[index];
+    final parts = sentence.text
+        .split(RegExp(r'(?<=[.!?。！？])[\s]*'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.length <= 1) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('no_sentences'))),
+        );
+      }
+      return;
+    }
+    _sentences.removeAt(index);
+    for (int i = parts.length - 1; i >= 0; i--) {
+      _sentences.insert(index, Sentence(text: parts[i], speaker: sentence.speaker));
+    }
+    _syncKeys();
+    await _saveChanges();
+    setState(() {});
   }
 
   Future<void> _deleteSelected() async {
@@ -402,6 +452,60 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await storageService.saveLesson(updated);
   }
 
+  // ---- Translation ----
+
+  Future<void> _translateSingle(int index) async {
+    setState(() => _isTranslating = true);
+    try {
+      final result = await llmService.translateText(
+        _sentences[index].text,
+        settingsService.translationTargetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _translations[index] = result.trim();
+          _showTranslations = true;
+          _isTranslating = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isTranslating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('translation_failed')}: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _translateAll() async {
+    setState(() => _isTranslating = true);
+    try {
+      final allText = _sentences.map((s) => s.text).join('\n');
+      final result = await llmService.translateText(
+        allText,
+        settingsService.translationTargetLang,
+      );
+      final lines = result.trim().split('\n');
+      if (mounted) {
+        setState(() {
+          for (int i = 0; i < _sentences.length && i < lines.length; i++) {
+            _translations[i] = lines[i].trim();
+          }
+          _showTranslations = true;
+          _isTranslating = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isTranslating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('translation_failed')}: $e')),
+        );
+      }
+    }
+  }
+
   // ---- Build ----
 
   @override
@@ -423,6 +527,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final hasTranslationConfig = settingsService.translationProviderId.isNotEmpty &&
+        settingsService.translationModel.isNotEmpty;
     return AppBar(
       title: Text(widget.lesson.title),
       actions: [
@@ -433,12 +539,49 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ? t('deselect')
                 : t('select_all')),
           ),
+          if (_selectedIndices.length >= 2)
+            IconButton(
+              icon: const Icon(Icons.merge_type),
+              tooltip: t('merge_sentences'),
+              onPressed: _mergeSelected,
+            ),
+          if (_selectedIndices.length == 1)
+            IconButton(
+              icon: const Icon(Icons.content_cut),
+              tooltip: t('split_sentence'),
+              onPressed: () => _splitSentence(_selectedIndices.first),
+            ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.red),
             tooltip: t('delete_selected'),
             onPressed: _selectedIndices.isNotEmpty ? _deleteSelected : null,
           ),
-        ] else
+        ] else ...[
+          if (hasTranslationConfig)
+            _isTranslating
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : PopupMenuButton<String>(
+                    icon: const Icon(Icons.translate),
+                    tooltip: t('translate'),
+                    onSelected: (v) {
+                      if (v == 'all') _translateAll();
+                      if (v == 'single' && _currentIndex >= 0) _translateSingle(_currentIndex);
+                      if (v == 'hide') setState(() => _showTranslations = false);
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'all', child: Text(t('translate_all'))),
+                      if (_currentIndex >= 0)
+                        PopupMenuItem(value: 'single', child: Text(t('translate'))),
+                      if (_showTranslations)
+                        PopupMenuItem(value: 'hide', child: Text(t('hide_translation'))),
+                    ],
+                  ),
           PopupMenuButton<PlayMode>(
             icon: Icon(_playModeIcon()),
             tooltip: t('play_mode'),
@@ -450,6 +593,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               _buildModeItem(PlayMode.loop, Icons.repeat, t('loop_mode')),
             ],
           ),
+        ],
         IconButton(
           icon: Icon(_isEditMode ? Icons.check : Icons.edit_note),
           tooltip: _isEditMode ? t('done') : t('edit'),
@@ -541,6 +685,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
                               isActive ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
+                      if (_showTranslations && _translations.containsKey(index))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            _translations[index]!,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.4,
+                              color: cs.onSurface.withValues(alpha: 0.6),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -594,11 +751,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           Text(sentence.speaker!,
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.blue[700],
+                                  color: Theme.of(context).colorScheme.primary,
                                   fontWeight: FontWeight.bold)),
                         Text(sentence.text,
-                            style: const TextStyle(
-                                fontSize: 16, color: Colors.black87)),
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Theme.of(context).colorScheme.onSurface)),
                       ],
                     ),
                   ),
