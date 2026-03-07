@@ -490,7 +490,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Book Speaker'),
-            subtitle: Text('v1.3.0 — ${t('app_name')}'),
+            subtitle: Text('v1.4.0 — ${t('app_name')}'),
           ),
           ListTile(
             leading: const Icon(Icons.system_update),
@@ -890,7 +890,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.center,
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + 20,
-                bottom: MediaQuery.of(context).padding.bottom + 20,
+                bottom: (MediaQuery.of(context).viewInsets.bottom > 0
+                    ? MediaQuery.of(context).viewInsets.bottom + 10
+                    : MediaQuery.of(context).padding.bottom + 20),
                 left: 20,
                 right: 20,
               ),
@@ -904,7 +906,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Container(
                       width: double.infinity,
                       constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height * 0.75,
+                        maxHeight: MediaQuery.of(context).size.height
+                            - MediaQuery.of(context).viewInsets.bottom
+                            - MediaQuery.of(context).padding.top
+                            - MediaQuery.of(context).padding.bottom
+                            - 60,
                       ),
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(

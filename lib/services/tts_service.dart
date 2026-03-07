@@ -257,46 +257,27 @@ class TtsService {
     try { await _safe(_tts.setPitch(_settings.pitch)); } catch (_) {}
     try { await _safe(_tts.setVolume(1.0)); } catch (_) {}
     
-    // Language: use saved preference, or device locale, or fallback
-    final loc = ui.PlatformDispatcher.instance.locale;
-    final defaultTag = _localeToTag(loc);
+    // Language: only set if user has an explicit preference.
+    // Otherwise let the system TTS engine use its own default language.
+    // This is an English learning app, so en-US is a reasonable fallback.
     final saved = _settings.systemTtsLanguage;
-    final tag = saved.isNotEmpty ? saved : defaultTag;
-    
-    try {
-      bool? res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
-      // Retry once if language not ready right after engine bind
-      if (res != true) {
-        await Future.delayed(const Duration(milliseconds: 300));
-        res = await _safe<dynamic>(_tts.isLanguageAvailable(tag));
-      }
-
-      if (res == true) {
-        await _safe(_tts.setLanguage(tag));
-      } else {
-        // If requested language unavailable, try some logical fallbacks
-        final isZh = loc.languageCode.toLowerCase().startsWith('zh') || tag.toLowerCase().startsWith('zh');
-        
-        final fb1 = isZh ? 'zh-CN' : 'en-US';
-        final ok1 = await _safe<dynamic>(_tts.isLanguageAvailable(fb1));
-        if (ok1 == true) {
-          await _safe(_tts.setLanguage(fb1));
-        } else {
-          // Last resort: just try English or the very first available language
-          final ok2 = await _safe<dynamic>(_tts.isLanguageAvailable('en-US'));
-          if (ok2 == true) {
-            await _safe(_tts.setLanguage('en-US'));
-          } else {
-            // If even en-US is not available, just try to get the first language the engine supports
-            final langs = await _safe<dynamic>(_tts.getLanguages);
-            if (langs is List && langs.isNotEmpty) {
-               await _safe(_tts.setLanguage(langs.first.toString()));
-            }
-          }
+    if (saved.isNotEmpty) {
+      try {
+        final ok = await _safe<dynamic>(_tts.isLanguageAvailable(saved));
+        if (ok == true) {
+          await _safe(_tts.setLanguage(saved));
         }
+      } catch (e) {
+        debugPrint('[TTS] _applyConfig language error: $e');
       }
-    } catch (e) {
-      debugPrint('[TTS] _applyConfig language error: $e');
+    } else {
+      // No saved preference — try en-US as sensible default for English content
+      try {
+        final ok = await _safe<dynamic>(_tts.isLanguageAvailable('en-US'));
+        if (ok == true) {
+          await _safe(_tts.setLanguage('en-US'));
+        }
+      } catch (_) {}
     }
     
     // CRITICAL: use awaitSpeakCompletion(false) — speak returns immediately,
@@ -321,7 +302,10 @@ class TtsService {
     await _kickEngine();
     final bound = await _ensureBound(timeout: const Duration(seconds: 4));
     if (bound) {
-      await _selectEngine();
+      // Only override engine if user has an explicit preference
+      if (_settings.systemTtsEngine.isNotEmpty) {
+        await _selectEngine();
+      }
       await _applyConfig();
     }
     debugPrint('[TTS] recreate done, engineReady=$_engineReady');
@@ -427,8 +411,7 @@ class TtsService {
     if (_speakOk(res)) return true;
     debugPrint('[TTS] _trySpeak: attempt 1 failed (res=$res)');
 
-    // Attempt 2: re-select engine + retries
-    await _selectEngine();
+    // Attempt 2: re-apply config + retries (don't override system default engine)
     await _applyConfig();
     for (int i = 0; i < 3; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
@@ -437,7 +420,7 @@ class TtsService {
         timeout: const Duration(seconds: 3),
       );
       if (_speakOk(res)) return true;
-      debugPrint('[TTS] _trySpeak: selectEngine retry $i failed (res=$res)');
+      debugPrint('[TTS] _trySpeak: config retry $i failed (res=$res)');
     }
 
     // Attempt 3: full engine recreate + retries

@@ -104,7 +104,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // ---- TTS Playback ----
 
   void _onSpeechComplete() {
-    if (!mounted) return;
+    if (!mounted || !_isPlaying) return;
     switch (_playMode) {
       case PlayMode.single:
         setState(() => _isPlaying = false);
@@ -142,8 +142,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _stop() async {
-    await _tts.stop();
     setState(() => _isPlaying = false);
+    await _tts.stop();
   }
 
   Future<void> _playAll() async {
@@ -590,24 +590,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : PopupMenuButton<String>(
-                    icon: const Icon(Icons.translate),
-                    tooltip: t('translate'),
-                    onSelected: (v) {
-                      if (v == 'all') _translateAll();
-                      if (v == 'single' && _currentIndex >= 0) _translateSingle(_currentIndex);
-                      if (v == 'hide') setState(() => _showTranslations = false);
-                      if (v == 'show') setState(() => _showTranslations = true);
+                : IconButton(
+                    icon: Icon(
+                      _showTranslations ? Icons.translate : Icons.translate,
+                      color: _showTranslations
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                    tooltip: _hasCache
+                        ? (_showTranslations ? t('hide_translation') : t('show_translation'))
+                        : t('translate_all'),
+                    onPressed: () {
+                      if (!_hasCache) {
+                        _translateAll();
+                      } else {
+                        setState(() => _showTranslations = !_showTranslations);
+                      }
                     },
-                    itemBuilder: (_) => [
-                      PopupMenuItem(value: 'all', child: Text(t('translate_all'))),
-                      if (_currentIndex >= 0)
-                        PopupMenuItem(value: 'single', child: Text(t('translate'))),
-                      if (_showTranslations)
-                        PopupMenuItem(value: 'hide', child: Text(t('hide_translation'))),
-                      if (!_showTranslations && _hasCache)
-                        PopupMenuItem(value: 'show', child: Text(t('show_translation'))),
-                    ],
                   ),
           PopupMenuButton<PlayMode>(
             icon: Icon(_playModeIcon()),
@@ -648,7 +647,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
             setState(() => _playMode = PlayMode.single);
             _speakAt(index);
           },
-          onLongPress: _toggleEditMode,
+          onLongPress: () {
+            // If translation config exists and sentence not yet translated, translate it
+            final hasConfig = settingsService.translationProviderId.isNotEmpty &&
+                settingsService.translationModel.isNotEmpty;
+            if (hasConfig && !_translationCache.containsKey(sentence.text)) {
+              _translateSingle(index);
+            } else {
+              _toggleEditMode();
+            }
+          },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             margin: const EdgeInsets.symmetric(vertical: 4),

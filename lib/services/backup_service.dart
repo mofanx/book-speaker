@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
 class BackupService {
+  static const int _backupVersion = 2;
   static const List<String> _boxesToBackup = [
     'lessons',
     'folders',
@@ -15,22 +16,32 @@ class BackupService {
     'providers',
   ];
 
+  // String-typed boxes (stored as Box<String> in Hive)
+  static const _stringBoxes = {'lessons', 'folders', 'providers'};
+
   BoxBase _getOpenBox(String boxName) {
-    // Boxes may already be open with a specific type (Box<String>).
-    // Use Hive.box<String>() for known String boxes to avoid type conflict.
     if (Hive.isBoxOpen(boxName)) {
-      try {
-        return Hive.box<String>(boxName);
-      } catch (_) {
-        return Hive.box(boxName);
+      if (_stringBoxes.contains(boxName)) {
+        try {
+          return Hive.box<String>(boxName);
+        } catch (_) {
+          return Hive.box(boxName);
+        }
       }
+      return Hive.box(boxName);
     }
     throw Exception('Box "$boxName" is not open');
   }
 
   Future<String?> exportData() async {
     try {
-      final Map<String, dynamic> backupData = {};
+      final Map<String, dynamic> backupData = {
+        '_meta': {
+          'version': _backupVersion,
+          'exportedAt': DateTime.now().toIso8601String(),
+          'appVersion': '1.4.0',
+        },
+      };
 
       for (final boxName in _boxesToBackup) {
         final box = _getOpenBox(boxName);
@@ -76,14 +87,25 @@ class BackupService {
         final jsonStr = await file.readAsString();
         final Map<String, dynamic> backupData = jsonDecode(jsonStr);
 
+        // Log backup metadata if present
+        if (backupData.containsKey('_meta')) {
+          debugPrint('Importing backup: ${backupData['_meta']}');
+        }
+
         for (final boxName in _boxesToBackup) {
           if (backupData.containsKey(boxName)) {
             final box = _getOpenBox(boxName) as Box;
             await box.clear();
             
-            final Map<String, dynamic> boxData = backupData[boxName];
+            final Map<String, dynamic> boxData =
+                Map<String, dynamic>.from(backupData[boxName] as Map);
             for (final entry in boxData.entries) {
-              await box.put(entry.key, entry.value);
+              // For string boxes, ensure value is stored as String
+              if (_stringBoxes.contains(boxName)) {
+                await box.put(entry.key, entry.value?.toString() ?? '');
+              } else {
+                await box.put(entry.key, entry.value);
+              }
             }
           }
         }
