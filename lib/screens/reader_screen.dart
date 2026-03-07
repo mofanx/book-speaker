@@ -28,8 +28,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isEditMode = false;
   final Set<int> _selectedIndices = {};
 
-  // Translation
-  final Map<int, String> _translations = {};
+  // Translation — keyed by sentence text for stable caching
+  final Map<String, String> _translationCache = {};
   bool _showTranslations = false;
   bool _isTranslating = false;
 
@@ -454,16 +454,24 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   // ---- Translation ----
 
+  bool get _hasCache => _translationCache.isNotEmpty;
+
   Future<void> _translateSingle(int index) async {
+    final text = _sentences[index].text;
+    // Return cached result
+    if (_translationCache.containsKey(text)) {
+      setState(() => _showTranslations = true);
+      return;
+    }
     setState(() => _isTranslating = true);
     try {
       final result = await llmService.translateText(
-        _sentences[index].text,
+        text,
         settingsService.translationTargetLang,
       );
       if (mounted) {
         setState(() {
-          _translations[index] = result.trim();
+          _translationCache[text] = result.trim();
           _showTranslations = true;
           _isTranslating = false;
         });
@@ -479,18 +487,34 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _translateAll() async {
+    // Find sentences not yet cached
+    final uncached = <int, String>{};
+    for (int i = 0; i < _sentences.length; i++) {
+      if (!_translationCache.containsKey(_sentences[i].text)) {
+        uncached[i] = _sentences[i].text;
+      }
+    }
+    // If all cached, just show
+    if (uncached.isEmpty) {
+      setState(() => _showTranslations = true);
+      return;
+    }
     setState(() => _isTranslating = true);
     try {
-      final allText = _sentences.map((s) => s.text).join('\n');
+      final textsToTranslate = uncached.values.toList();
       final result = await llmService.translateText(
-        allText,
+        textsToTranslate.join('\n'),
         settingsService.translationTargetLang,
       );
       final lines = result.trim().split('\n');
       if (mounted) {
         setState(() {
-          for (int i = 0; i < _sentences.length && i < lines.length; i++) {
-            _translations[i] = lines[i].trim();
+          int li = 0;
+          for (final text in textsToTranslate) {
+            if (li < lines.length) {
+              _translationCache[text] = lines[li].trim();
+            }
+            li++;
           }
           _showTranslations = true;
           _isTranslating = false;
@@ -573,6 +597,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       if (v == 'all') _translateAll();
                       if (v == 'single' && _currentIndex >= 0) _translateSingle(_currentIndex);
                       if (v == 'hide') setState(() => _showTranslations = false);
+                      if (v == 'show') setState(() => _showTranslations = true);
                     },
                     itemBuilder: (_) => [
                       PopupMenuItem(value: 'all', child: Text(t('translate_all'))),
@@ -580,6 +605,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         PopupMenuItem(value: 'single', child: Text(t('translate'))),
                       if (_showTranslations)
                         PopupMenuItem(value: 'hide', child: Text(t('hide_translation'))),
+                      if (!_showTranslations && _hasCache)
+                        PopupMenuItem(value: 'show', child: Text(t('show_translation'))),
                     ],
                   ),
           PopupMenuButton<PlayMode>(
@@ -685,11 +712,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                               isActive ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
-                      if (_showTranslations && _translations.containsKey(index))
+                      if (_showTranslations && _translationCache.containsKey(sentence.text))
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            _translations[index]!,
+                            _translationCache[sentence.text]!,
                             style: TextStyle(
                               fontSize: 14,
                               height: 1.4,

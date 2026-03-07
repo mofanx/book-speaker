@@ -134,6 +134,7 @@ const _en = <String, String>{
   'translating': 'Translating...',
   'translation_failed': 'Translation failed',
   'hide_translation': 'Hide Translation',
+  'show_translation': 'Show Translation',
 
   // Settings
   'settings_language': 'App Language',
@@ -349,6 +350,7 @@ const _zh = <String, String>{
   'translating': '翻译中...',
   'translation_failed': '翻译失败',
   'hide_translation': '隐藏翻译',
+  'show_translation': '显示翻译',
 
   // Settings
   'settings_language': '应用语言',
