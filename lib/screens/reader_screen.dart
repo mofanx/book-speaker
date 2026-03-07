@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/lesson.dart';
 import '../l10n/app_localizations.dart';
 import '../services/tts_service.dart';
@@ -27,6 +28,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // Edit mode
   bool _isEditMode = false;
   final Set<int> _selectedIndices = {};
+
+  // Number display
+  bool _showNumbers = true;
+
+  // Search
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  List<int> _searchMatches = [];
+  int _searchMatchIndex = -1;
 
   // Translation — keyed by sentence text for stable caching
   final Map<String, String> _translationCache = {};
@@ -63,6 +73,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     // Don't dispose singleton TtsService; just detach callbacks
     _tts.onComplete = null;
     _tts.onStart = null;
@@ -208,6 +219,82 @@ class _ReaderScreenState extends State<ReaderScreen> {
       } else {
         _selectedIndices.addAll(List.generate(_sentences.length, (i) => i));
       }
+    });
+  }
+
+  void _invertSelection() {
+    setState(() {
+      final all = Set<int>.from(List.generate(_sentences.length, (i) => i));
+      final inverted = all.difference(_selectedIndices);
+      _selectedIndices.clear();
+      _selectedIndices.addAll(inverted);
+    });
+  }
+
+  void _exportSelectedToClipboard() {
+    if (_selectedIndices.isEmpty) return;
+    final sorted = _selectedIndices.toList()..sort();
+    final buf = StringBuffer();
+    for (final i in sorted) {
+      final s = _sentences[i];
+      if (s.speaker != null) {
+        buf.writeln('${s.speaker}: ${s.text}');
+      } else {
+        buf.writeln(s.text);
+      }
+    }
+    Clipboard.setData(ClipboardData(text: buf.toString().trim()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t('exported_to_clipboard'))),
+    );
+  }
+
+  // ---- Search ----
+
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchController.clear();
+        _searchMatches.clear();
+        _searchMatchIndex = -1;
+      }
+    });
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      _searchMatches.clear();
+      _searchMatchIndex = -1;
+      if (query.isNotEmpty) {
+        final q = query.toLowerCase();
+        for (int i = 0; i < _sentences.length; i++) {
+          if (_sentences[i].text.toLowerCase().contains(q) ||
+              (_sentences[i].speaker?.toLowerCase().contains(q) ?? false)) {
+            _searchMatches.add(i);
+          }
+        }
+        if (_searchMatches.isNotEmpty) {
+          _searchMatchIndex = 0;
+          _scrollToIndex(_searchMatches[0]);
+        }
+      }
+    });
+  }
+
+  void _nextMatch() {
+    if (_searchMatches.isEmpty) return;
+    setState(() {
+      _searchMatchIndex = (_searchMatchIndex + 1) % _searchMatches.length;
+      _scrollToIndex(_searchMatches[_searchMatchIndex]);
+    });
+  }
+
+  void _prevMatch() {
+    if (_searchMatches.isEmpty) return;
+    setState(() {
+      _searchMatchIndex = (_searchMatchIndex - 1 + _searchMatches.length) % _searchMatches.length;
+      _scrollToIndex(_searchMatches[_searchMatchIndex]);
     });
   }
 
@@ -538,6 +625,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       appBar: _buildAppBar(),
       body: Column(
         children: [
+          if (_isSearching) _buildSearchBar(),
           Expanded(
               child: _isEditMode ? _buildEditList() : _buildPlayList()),
           if (!_isEditMode) _buildControlBar(),
@@ -550,12 +638,65 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  Widget _buildSearchBar() {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: t('search_hint'),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+          ),
+          if (_searchMatches.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Text('${_searchMatchIndex + 1}/${_searchMatches.length}',
+                style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.6))),
+            IconButton(
+              icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+              onPressed: _prevMatch,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            IconButton(
+              icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+              onPressed: _nextMatch,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            onPressed: _toggleSearch,
+          ),
+        ],
+      ),
+    );
+  }
+
   PreferredSizeWidget _buildAppBar() {
     final hasTranslationConfig = settingsService.translationProviderId.isNotEmpty &&
         settingsService.translationModel.isNotEmpty;
     return AppBar(
       title: Text(widget.lesson.title),
       actions: [
+        // Search toggle (both modes)
+        IconButton(
+          icon: Icon(_isSearching ? Icons.search_off : Icons.search),
+          tooltip: t('search'),
+          onPressed: _toggleSearch,
+        ),
         if (_isEditMode) ...[
           TextButton(
             onPressed: _selectAll,
@@ -575,12 +716,32 @@ class _ReaderScreenState extends State<ReaderScreen> {
               tooltip: t('split_sentence'),
               onPressed: () => _splitSentence(_selectedIndices.first),
             ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (v) {
+              if (v == 'invert') _invertSelection();
+              if (v == 'export') _exportSelectedToClipboard();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'invert', child: Text(t('invert_selection'))),
+              if (_selectedIndices.isNotEmpty)
+                PopupMenuItem(value: 'export', child: Text(t('export_selected'))),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.red),
             tooltip: t('delete_selected'),
             onPressed: _selectedIndices.isNotEmpty ? _deleteSelected : null,
           ),
         ] else ...[
+          // Number toggle
+          IconButton(
+            icon: Icon(_showNumbers
+                ? Icons.format_list_numbered
+                : Icons.format_list_bulleted),
+            tooltip: _showNumbers ? t('hide_numbers') : t('show_numbers'),
+            onPressed: () => setState(() => _showNumbers = !_showNumbers),
+          ),
           if (hasTranslationConfig)
             _isTranslating
                 ? const Padding(
@@ -592,7 +753,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   )
                 : IconButton(
                     icon: Icon(
-                      _showTranslations ? Icons.translate : Icons.translate,
+                      Icons.translate,
                       color: _showTranslations
                           ? Theme.of(context).colorScheme.primary
                           : null,
@@ -640,6 +801,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
       itemBuilder: (context, index) {
         final sentence = _sentences[index];
         final isActive = index == _currentIndex;
+        final isMatch = _searchMatches.contains(index);
+        final isActiveMatch = _searchMatchIndex >= 0 &&
+            _searchMatchIndex < _searchMatches.length &&
+            _searchMatches[_searchMatchIndex] == index;
 
         return GestureDetector(
           key: _itemKeys[index],
@@ -648,7 +813,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
             _speakAt(index);
           },
           onLongPress: () {
-            // If translation config exists and sentence not yet translated, translate it
             final hasConfig = settingsService.translationProviderId.isNotEmpty &&
                 settingsService.translationModel.isNotEmpty;
             if (hasConfig && !_translationCache.containsKey(sentence.text)) {
@@ -664,11 +828,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
             decoration: BoxDecoration(
               color: isActive
                   ? cs.primaryContainer.withValues(alpha: 0.5)
-                  : cs.surface,
+                  : isActiveMatch
+                      ? Colors.amber.withValues(alpha: 0.15)
+                      : cs.surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isActive ? cs.primary : cs.outlineVariant,
-                width: isActive ? 2 : 1,
+                color: isActive
+                    ? cs.primary
+                    : isActiveMatch
+                        ? Colors.amber
+                        : isMatch
+                            ? Colors.amber.withValues(alpha: 0.5)
+                            : cs.outlineVariant,
+                width: isActive || isActiveMatch ? 2 : 1,
               ),
               boxShadow: isActive
                   ? [
@@ -682,6 +854,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ),
             child: Row(
               children: [
+                if (_showNumbers)
+                  SizedBox(
+                    width: 28,
+                    child: Text(
+                      '${index + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: isActive
+                            ? cs.primary
+                            : cs.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: isActive && _isPlaying
@@ -747,7 +934,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // ---- Edit Mode List ----
 
   Widget _buildEditList() {
+    final cs = Theme.of(context).colorScheme;
     return ReorderableListView.builder(
+      scrollController: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: _sentences.length,
       onReorder: _onReorder,
@@ -761,10 +950,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
       itemBuilder: (context, index) {
         final sentence = _sentences[index];
         final isSelected = _selectedIndices.contains(index);
+        final isMatch = _searchMatches.contains(index);
+        final isActiveMatch = _searchMatchIndex >= 0 &&
+            _searchMatchIndex < _searchMatches.length &&
+            _searchMatches[_searchMatchIndex] == index;
 
         return Card(
           key: ValueKey(sentence.id),
           margin: const EdgeInsets.symmetric(vertical: 4),
+          color: isActiveMatch
+              ? Colors.amber.withValues(alpha: 0.2)
+              : isMatch
+                  ? Colors.amber.withValues(alpha: 0.1)
+                  : null,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: InkWell(
@@ -774,6 +972,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Row(
                 children: [
+                  // Sentence number
+                  SizedBox(
+                    width: 28,
+                    child: Text(
+                      '${index + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ),
                   Checkbox(
                     value: isSelected,
                     onChanged: (_) => _toggleSelection(index),
@@ -786,12 +997,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           Text(sentence.speaker!,
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: Theme.of(context).colorScheme.primary,
+                                  color: cs.primary,
                                   fontWeight: FontWeight.bold)),
                         Text(sentence.text,
                             style: TextStyle(
                                 fontSize: 16,
-                                color: Theme.of(context).colorScheme.onSurface)),
+                                color: cs.onSurface)),
                       ],
                     ),
                   ),

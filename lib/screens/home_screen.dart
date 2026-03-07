@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/lesson.dart';
 import '../models/folder.dart';
 import '../l10n/app_localizations.dart';
@@ -377,10 +379,12 @@ class _HomeScreenState extends State<HomeScreen> {
             : PopupMenuButton<String>(
                 itemBuilder: (_) => [
                   PopupMenuItem(value: 'rename', child: Text(t('rename'))),
+                  PopupMenuItem(value: 'export', child: Text(t('export'))),
                   PopupMenuItem(value: 'delete', child: Text(t('delete'), style: const TextStyle(color: Colors.red))),
                 ],
                 onSelected: (v) {
                   if (v == 'rename') _renameFolder(folder);
+                  if (v == 'export') _exportFolder(folder);
                   if (v == 'delete') _deleteFolder(folder);
                 },
               ),
@@ -423,10 +427,12 @@ class _HomeScreenState extends State<HomeScreen> {
             : PopupMenuButton<String>(
                 itemBuilder: (_) => [
                   PopupMenuItem(value: 'rename', child: Text(t('rename'))),
+                  PopupMenuItem(value: 'export', child: Text(t('export'))),
                   PopupMenuItem(value: 'delete', child: Text(t('delete'), style: const TextStyle(color: Colors.red))),
                 ],
                 onSelected: (v) {
                   if (v == 'rename') _renameLesson(lesson);
+                  if (v == 'export') _exportLesson(lesson);
                   if (v == 'delete') _deleteLesson(lesson);
                 },
               ),
@@ -579,6 +585,71 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _toggleSelectionMode();
     _loadData();
+  }
+
+  // ---- Export ----
+
+  String _formatLessonText(Lesson lesson) {
+    final buf = StringBuffer();
+    for (final s in lesson.sentences) {
+      if (s.speaker != null) {
+        buf.writeln('${s.speaker}: ${s.text}');
+      } else {
+        buf.writeln(s.text);
+      }
+    }
+    return buf.toString().trim();
+  }
+
+  void _exportLesson(Lesson lesson) {
+    final text = '${lesson.title}\n\n${_formatLessonText(lesson)}';
+    _showExportSheet(title: lesson.title, text: text);
+  }
+
+  Future<void> _exportFolder(Folder folder) async {
+    final allLessons = await storageService.getAllLessons();
+    final folderLessons = allLessons.where((l) => l.folderId == folder.id).toList();
+
+    final buf = StringBuffer();
+    buf.writeln(folder.name);
+    for (final lesson in folderLessons) {
+      buf.writeln();
+      buf.writeln('--- ${lesson.title} ---');
+      buf.writeln(_formatLessonText(lesson));
+    }
+    _showExportSheet(title: folder.name, text: buf.toString().trim());
+  }
+
+  void _showExportSheet({required String title, required String text}) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: Text(t('export_to_clipboard')),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(t('exported_to_clipboard'))),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: Text(t('export_to_file')),
+              onTap: () {
+                Navigator.pop(ctx);
+                Share.share(text, subject: title);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Returns folderId, 'ROOT', or 'CANCEL'

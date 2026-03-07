@@ -96,7 +96,7 @@ const _en = <String, String>{
   'content_title_hint': 'e.g. Unit 3 - At the Zoo',
   'take_photo': 'Take Photo',
   'from_gallery': 'From Gallery',
-  'paste_text_hint': 'Or paste dialogue text below:',
+  'paste_text_hint': 'Or paste contents below:',
   'ai_optimize': 'AI Optimize',
   'optimizing': 'Optimizing...',
   'text_optimized': 'Text optimized successfully',
@@ -235,6 +235,22 @@ const _en = <String, String>{
   'reset_to_default': 'Reset to Default',
   'custom_prompt_hint': 'Leave empty to use the default prompt',
 
+  // Export
+  'export': 'Export',
+  'export_to_clipboard': 'Copy to Clipboard',
+  'export_to_file': 'Share as Text',
+  'exported_to_clipboard': 'Copied to clipboard',
+
+  // Search & Numbers
+  'search': 'Search',
+  'search_hint': 'Search sentences...',
+  'show_numbers': 'Show Numbers',
+  'hide_numbers': 'Hide Numbers',
+
+  // Edit extras
+  'invert_selection': 'Invert Selection',
+  'export_selected': 'Export Selected',
+
   // About
   'about_github': 'GitHub Repository',
   'copied': 'Copied!',
@@ -312,7 +328,7 @@ const _zh = <String, String>{
   'content_title_hint': '例如：第三单元 - 在动物园',
   'take_photo': '拍照',
   'from_gallery': '从相册',
-  'paste_text_hint': '或粘贴对话文本：',
+  'paste_text_hint': '或粘贴内容到下方：',
   'ai_optimize': 'AI优化',
   'optimizing': '优化中...',
   'text_optimized': '文本优化成功',
@@ -450,6 +466,22 @@ const _zh = <String, String>{
   'text_opt_custom_prompt': '自定义优化提示词',
   'reset_to_default': '重置为默认',
   'custom_prompt_hint': '留空则使用默认提示词',
+
+  // Export
+  'export': '导出',
+  'export_to_clipboard': '复制到剪贴板',
+  'export_to_file': '分享为文本',
+  'exported_to_clipboard': '已复制到剪贴板',
+
+  // Search & Numbers
+  'search': '搜索',
+  'search_hint': '搜索句子...',
+  'show_numbers': '显示序号',
+  'hide_numbers': '隐藏序号',
+
+  // Edit extras
+  'invert_selection': '反选',
+  'export_selected': '导出选中',
 
   // About
   'about_github': 'GitHub 项目地址',

@@ -69,6 +69,14 @@ class Lesson {
   ///   A: Hello! What's your name?
   ///   B: My name is Mike.
   /// Or plain text with one sentence per line.
+  /// Regex to strip leading numbering like "1.", "1、", "2)", "(3)", "1 "
+  static final _numberPrefix = RegExp(r'^\s*(?:\(?\d+[.、)）]\s*|\(\d+\)\s*)');
+
+  /// Speaker regex: supports ASCII, CJK characters, and both : and ：
+  static final _speakerRegex = RegExp(
+    r'^([A-Za-z\u4e00-\u9fff][\w\s\u4e00-\u9fff]{0,18})[:：]\s*(.+)$',
+  );
+
   static List<Sentence> parseText(String rawText) {
     final lines = rawText
         .split('\n')
@@ -77,10 +85,13 @@ class Lesson {
         .toList();
 
     final sentences = <Sentence>[];
-    final speakerRegex = RegExp(r'^([A-Za-z\s]+):\s*(.+)$');
 
     for (final line in lines) {
-      final match = speakerRegex.firstMatch(line);
+      // Strip leading numbering (e.g. "1. ", "2、", "(3) ")
+      final cleaned = line.replaceFirst(_numberPrefix, '').trim();
+      if (cleaned.isEmpty) continue;
+
+      final match = _speakerRegex.firstMatch(cleaned);
       if (match != null) {
         final speaker = match.group(1)!.trim();
         final text = match.group(2)!.trim();
@@ -89,7 +100,7 @@ class Lesson {
           sentences.add(Sentence(text: sub, speaker: speaker));
         }
       } else {
-        final subs = _splitBySentence(line);
+        final subs = _splitBySentence(cleaned);
         for (final sub in subs) {
           sentences.add(Sentence(text: sub));
         }
