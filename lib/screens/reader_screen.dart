@@ -519,12 +519,39 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _onReorder(int oldIndex, int newIndex) {
-    setState(() {
-      if (newIndex > oldIndex) newIndex--;
+    if (newIndex > oldIndex) newIndex--;
+    // Batch drag: if the dragged item is selected, move all selected items
+    if (_selectedIndices.contains(oldIndex) && _selectedIndices.length > 1) {
+      final sorted = _selectedIndices.toList()..sort();
+      final items = sorted.map((i) => _sentences[i]).toList();
+      // Remove from end to preserve indices
+      for (int i = sorted.length - 1; i >= 0; i--) {
+        _sentences.removeAt(sorted[i]);
+      }
+      // Adjust insertion point for removed items before it
+      int insertAt = newIndex;
+      for (final idx in sorted) {
+        if (idx < newIndex) insertAt--;
+      }
+      insertAt = insertAt.clamp(0, _sentences.length);
+      // Insert all items at the new position
+      _sentences.insertAll(insertAt, items);
+      // Update selection to new indices
+      _selectedIndices.clear();
+      for (int i = 0; i < items.length; i++) {
+        _selectedIndices.add(insertAt + i);
+      }
+    } else {
       final item = _sentences.removeAt(oldIndex);
       _sentences.insert(newIndex, item);
-    });
+      // Update selection if the moved item was selected
+      if (_selectedIndices.contains(oldIndex)) {
+        _selectedIndices.remove(oldIndex);
+        _selectedIndices.add(newIndex);
+      }
+    }
     _syncKeys();
+    setState(() {});
     _saveChanges();
   }
 
@@ -535,6 +562,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       sentences: _sentences,
       createdAt: widget.lesson.createdAt,
       folderId: widget.lesson.folderId,
+      sortOrder: widget.lesson.sortOrder,
     );
     await storageService.saveLesson(updated);
   }
@@ -559,6 +587,51 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (mounted) {
         setState(() {
           _translationCache[text] = result.trim();
+          _showTranslations = true;
+          _isTranslating = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isTranslating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('translation_failed')}: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _retranslateAll() async {
+    _translationCache.clear();
+    await _translateAll();
+  }
+
+  Future<void> _translateSelected() async {
+    if (_selectedIndices.isEmpty) return;
+    final sorted = _selectedIndices.toList()..sort();
+    final uncached = <String>[];
+    for (final i in sorted) {
+      final text = _sentences[i].text;
+      if (!_translationCache.containsKey(text)) {
+        uncached.add(text);
+      }
+    }
+    if (uncached.isEmpty) {
+      setState(() => _showTranslations = true);
+      return;
+    }
+    setState(() => _isTranslating = true);
+    try {
+      final result = await llmService.translateText(
+        uncached.join('\n'),
+        settingsService.translationTargetLang,
+      );
+      final lines = result.trim().split('\n');
+      if (mounted) {
+        setState(() {
+          for (int i = 0; i < uncached.length && i < lines.length; i++) {
+            _translationCache[uncached[i]] = lines[i].trim();
+          }
           _showTranslations = true;
           _isTranslating = false;
         });
@@ -721,11 +794,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
             onSelected: (v) {
               if (v == 'invert') _invertSelection();
               if (v == 'export') _exportSelectedToClipboard();
+              if (v == 'translate') _translateSelected();
             },
             itemBuilder: (_) => [
               PopupMenuItem(value: 'invert', child: Text(t('invert_selection'))),
-              if (_selectedIndices.isNotEmpty)
+              if (_selectedIndices.isNotEmpty) ...[
                 PopupMenuItem(value: 'export', child: Text(t('export_selected'))),
+                if (hasTranslationConfig)
+                  PopupMenuItem(value: 'translate', child: Text(t('translate_selected'))),
+              ],
             ],
           ),
           IconButton(
@@ -742,7 +819,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
             tooltip: _showNumbers ? t('hide_numbers') : t('show_numbers'),
             onPressed: () => setState(() => _showNumbers = !_showNumbers),
           ),
-          if (hasTranslationConfig)
+          if (hasTranslationConfig) ...[
+            // Show/hide translation toggle (only when cache exists)
+            if (_hasCache)
+              IconButton(
+                icon: Icon(
+                  _showTranslations ? Icons.visibility : Icons.visibility_off,
+                  color: _showTranslations
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                  size: 22,
+                ),
+                tooltip: _showTranslations ? t('hide_translation') : t('show_translation'),
+                onPressed: () => setState(() => _showTranslations = !_showTranslations),
+              ),
+            // Translate actions
             _isTranslating
                 ? const Padding(
                     padding: EdgeInsets.all(12),
@@ -751,24 +842,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : IconButton(
-                    icon: Icon(
-                      Icons.translate,
-                      color: _showTranslations
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                    ),
-                    tooltip: _hasCache
-                        ? (_showTranslations ? t('hide_translation') : t('show_translation'))
-                        : t('translate_all'),
-                    onPressed: () {
-                      if (!_hasCache) {
-                        _translateAll();
-                      } else {
-                        setState(() => _showTranslations = !_showTranslations);
-                      }
+                : PopupMenuButton<String>(
+                    icon: const Icon(Icons.translate),
+                    tooltip: t('translate'),
+                    onSelected: (v) {
+                      if (v == 'all') _translateAll();
+                      if (v == 'single' && _currentIndex >= 0) _translateSingle(_currentIndex);
+                      if (v == 'retranslate') _retranslateAll();
                     },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'all', child: Text(t('translate_all'))),
+                      if (_currentIndex >= 0)
+                        PopupMenuItem(value: 'single', child: Text(t('translate_current'))),
+                      if (_hasCache)
+                        PopupMenuItem(value: 'retranslate', child: Text(t('retranslate_all'))),
+                    ],
                   ),
+          ],
           PopupMenuButton<PlayMode>(
             icon: Icon(_playModeIcon()),
             tooltip: t('play_mode'),

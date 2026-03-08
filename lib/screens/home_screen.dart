@@ -28,6 +28,14 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _selectedFolderIds = {};
   final Set<String> _selectedLessonIds = {};
 
+  // Search
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  // Reorder mode
+  bool _isReorderMode = false;
+
   Future<void> _loadData() async {
     final allFolders = await storageService.getAllFolders();
     final allLessons = await storageService.getAllLessons();
@@ -45,6 +53,24 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Folder> get _filteredFolders {
+    if (_searchQuery.isEmpty) return _folders;
+    final q = _searchQuery.toLowerCase();
+    return _folders.where((f) => f.name.toLowerCase().contains(q)).toList();
+  }
+
+  List<Lesson> get _filteredLessons {
+    if (_searchQuery.isEmpty) return _lessons;
+    final q = _searchQuery.toLowerCase();
+    return _lessons.where((l) => l.title.toLowerCase().contains(q)).toList();
   }
 
   void _toggleSelectionMode() {
@@ -111,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
         sentences: lesson.sentences,
         createdAt: lesson.createdAt,
         folderId: lesson.folderId,
+        sortOrder: lesson.sortOrder,
       ));
       _loadData();
     }
@@ -149,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
         name: newName,
         parentId: folder.parentId,
         createdAt: folder.createdAt,
+        sortOrder: folder.sortOrder,
       ));
       _loadData();
     }
@@ -281,9 +309,81 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchController.clear();
+        _searchQuery = '';
+      }
+    });
+  }
+
+  void _toggleReorderMode() {
+    setState(() {
+      _isReorderMode = !_isReorderMode;
+      if (_isReorderMode) {
+        _isSelectionMode = false;
+        _selectedFolderIds.clear();
+        _selectedLessonIds.clear();
+        _isSearching = false;
+        _searchController.clear();
+        _searchQuery = '';
+      }
+    });
+  }
+
+  Future<void> _onReorderFolders(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    setState(() {
+      final item = _folders.removeAt(oldIndex);
+      _folders.insert(newIndex, item);
+    });
+    await _saveFolderOrder();
+  }
+
+  Future<void> _onReorderLessons(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    setState(() {
+      final item = _lessons.removeAt(oldIndex);
+      _lessons.insert(newIndex, item);
+    });
+    await _saveLessonOrder();
+  }
+
+  Future<void> _saveFolderOrder() async {
+    for (int i = 0; i < _folders.length; i++) {
+      final f = _folders[i];
+      if (f.sortOrder != i) {
+        final updated = Folder(
+          id: f.id, name: f.name, parentId: f.parentId,
+          createdAt: f.createdAt, sortOrder: i,
+        );
+        _folders[i] = updated;
+        await storageService.saveFolder(updated);
+      }
+    }
+  }
+
+  Future<void> _saveLessonOrder() async {
+    for (int i = 0; i < _lessons.length; i++) {
+      final l = _lessons[i];
+      if (l.sortOrder != i) {
+        final updated = Lesson(
+          id: l.id, title: l.title, sentences: l.sentences,
+          createdAt: l.createdAt, folderId: l.folderId, sortOrder: i,
+        );
+        _lessons[i] = updated;
+        await storageService.saveLesson(updated);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasContent = _folders.isNotEmpty || _lessons.isNotEmpty;
+    final folders = _filteredFolders;
+    final lessons = _filteredLessons;
 
     return Scaffold(
       appBar: AppBar(
@@ -296,13 +396,25 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             : null,
         actions: [
-          if (hasContent)
+          if (hasContent && !_isReorderMode) ...[
+            IconButton(
+              icon: Icon(_isSearching ? Icons.search_off : Icons.search),
+              tooltip: t('search'),
+              onPressed: _toggleSearch,
+            ),
             IconButton(
               icon: Icon(_isSelectionMode ? Icons.close : Icons.checklist),
               tooltip: _isSelectionMode ? t('cancel') : t('select'),
               onPressed: _toggleSelectionMode,
             ),
-          if (!_isSelectionMode && widget.folder == null)
+          ],
+          if (hasContent && !_isSelectionMode)
+            IconButton(
+              icon: Icon(_isReorderMode ? Icons.check : Icons.swap_vert),
+              tooltip: _isReorderMode ? t('done') : t('reorder'),
+              onPressed: _toggleReorderMode,
+            ),
+          if (!_isSelectionMode && !_isReorderMode && widget.folder == null)
             IconButton(
               icon: const Icon(Icons.settings),
               tooltip: t('settings'),
@@ -337,28 +449,145 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _folders.length + _lessons.length,
-                  itemBuilder: (context, index) {
-                    if (index < _folders.length) {
-                      final folder = _folders[index];
-                      final isSelected = _selectedFolderIds.contains(folder.id);
-                      return _buildFolderCard(folder, isSelected);
-                    } else {
-                      final lesson = _lessons[index - _folders.length];
-                      final isSelected = _selectedLessonIds.contains(lesson.id);
-                      return _buildLessonCard(lesson, isSelected, index - _folders.length);
-                    }
-                  },
+              : Column(
+                  children: [
+                    if (_isSearching) _buildSearchBar(),
+                    Expanded(
+                      child: _isReorderMode
+                          ? _buildReorderList()
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: folders.length + lessons.length,
+                              itemBuilder: (context, index) {
+                                if (index < folders.length) {
+                                  final folder = folders[index];
+                                  final isSelected = _selectedFolderIds.contains(folder.id);
+                                  return _buildFolderCard(folder, isSelected);
+                                } else {
+                                  final lesson = lessons[index - folders.length];
+                                  final isSelected = _selectedLessonIds.contains(lesson.id);
+                                  return _buildLessonCard(lesson, isSelected, index - folders.length);
+                                }
+                              },
+                            ),
+                    ),
+                  ],
                 ),
-      floatingActionButton: _isSelectionMode
+      floatingActionButton: (_isSelectionMode || _isReorderMode)
           ? null
           : FloatingActionButton(
               onPressed: _showAddMenu,
               child: const Icon(Icons.add),
             ),
       bottomNavigationBar: _isSelectionMode ? _buildSelectionBottomBar() : null,
+    );
+  }
+
+  Widget _buildSearchBar() {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+      child: TextField(
+        controller: _searchController,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: t('search_home_hint'),
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            onPressed: _toggleSearch,
+          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        ),
+        onChanged: (v) => setState(() => _searchQuery = v),
+      ),
+    );
+  }
+
+  Widget _buildReorderList() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_folders.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(t('folders_section'),
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.primary,
+                  )),
+            ),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _folders.length,
+              onReorder: _onReorderFolders,
+              proxyDecorator: (child, _, __) => Material(
+                elevation: 4, borderRadius: BorderRadius.circular(12), child: child,
+              ),
+              itemBuilder: (_, i) {
+                final f = _folders[i];
+                return Card(
+                  key: ValueKey('folder_${f.id}'),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(Icons.folder, color: Colors.orange.shade300, size: 36),
+                    title: Text(f.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    trailing: ReorderableDragStartListener(
+                      index: i,
+                      child: const Icon(Icons.drag_handle, color: Colors.grey),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (_lessons.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(t('contents_section'),
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.primary,
+                  )),
+            ),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _lessons.length,
+              onReorder: _onReorderLessons,
+              proxyDecorator: (child, _, __) => Material(
+                elevation: 4, borderRadius: BorderRadius.circular(12), child: child,
+              ),
+              itemBuilder: (_, i) {
+                final l = _lessons[i];
+                return Card(
+                  key: ValueKey('lesson_${l.id}'),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.blue[100],
+                      child: Text('${i + 1}', style: TextStyle(color: Colors.blue[800])),
+                    ),
+                    title: Text(l.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(t('sentences_detected').replaceAll('%d', '${l.sentences.length}')),
+                    trailing: ReorderableDragStartListener(
+                      index: i,
+                      child: const Icon(Icons.drag_handle, color: Colors.grey),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -527,6 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
           sentences: lesson.sentences,
           createdAt: lesson.createdAt,
           folderId: dest,
+          sortOrder: lesson.sortOrder,
         ));
       }
     }
@@ -542,6 +772,7 @@ class _HomeScreenState extends State<HomeScreen> {
           name: folder.name,
           parentId: dest,
           createdAt: folder.createdAt,
+          sortOrder: folder.sortOrder,
         ));
       }
     }
@@ -565,6 +796,7 @@ class _HomeScreenState extends State<HomeScreen> {
           sentences: lesson.sentences,
           createdAt: DateTime.now(),
           folderId: dest,
+          sortOrder: lesson.sortOrder,
         ));
       }
     }

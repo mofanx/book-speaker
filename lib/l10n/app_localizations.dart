@@ -244,12 +244,23 @@ const _en = <String, String>{
   // Search & Numbers
   'search': 'Search',
   'search_hint': 'Search sentences...',
+  'search_home_hint': 'Search folders and contents...',
   'show_numbers': 'Show Numbers',
   'hide_numbers': 'Hide Numbers',
+
+  // Reorder
+  'reorder': 'Reorder',
+  'folders_section': 'Folders',
+  'contents_section': 'Contents',
 
   // Edit extras
   'invert_selection': 'Invert Selection',
   'export_selected': 'Export Selected',
+
+  // Translation extras
+  'translate_current': 'Translate Current',
+  'translate_selected': 'Translate Selected',
+  'retranslate_all': 'Re-translate All',
 
   // About
   'about_github': 'GitHub Repository',
@@ -476,12 +487,23 @@ const _zh = <String, String>{
   // Search & Numbers
   'search': '搜索',
   'search_hint': '搜索句子...',
+  'search_home_hint': '搜索文件夹和内容...',
   'show_numbers': '显示序号',
   'hide_numbers': '隐藏序号',
+
+  // Reorder
+  'reorder': '排序',
+  'folders_section': '文件夹',
+  'contents_section': '内容',
 
   // Edit extras
   'invert_selection': '反选',
   'export_selected': '导出选中',
+
+  // Translation extras
+  'translate_current': '翻译当前句',
+  'translate_selected': '翻译选中',
+  'retranslate_all': '重新翻译全部',
 
   // About
   'about_github': 'GitHub 项目地址',

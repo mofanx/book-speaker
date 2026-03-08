@@ -55,6 +55,7 @@ class StorageService {
           sentences: lesson.sentences,
           createdAt: lesson.createdAt,
           folderId: null, // Move to root
+          sortOrder: lesson.sortOrder,
         );
         await saveLesson(updatedLesson);
       }
@@ -65,6 +66,7 @@ class StorageService {
           name: subFolder.name,
           parentId: null,
           createdAt: subFolder.createdAt,
+          sortOrder: subFolder.sortOrder,
         );
         await saveFolder(updatedFolder);
       }
@@ -84,7 +86,10 @@ class StorageService {
         } catch (_) {}
       }
     }
-    folders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    folders.sort((a, b) {
+      final c = a.sortOrder.compareTo(b.sortOrder);
+      return c != 0 ? c : b.createdAt.compareTo(a.createdAt);
+    });
     return folders;
   }
 
@@ -111,7 +116,10 @@ class StorageService {
         }
       }
     }
-    lessons.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    lessons.sort((a, b) {
+      final c = a.sortOrder.compareTo(b.sortOrder);
+      return c != 0 ? c : b.createdAt.compareTo(a.createdAt);
+    });
     return lessons;
   }
 

@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
 class BackupService {
-  static const int _backupVersion = 2;
+  static const int _backupVersion = 3;
   static const List<String> _boxesToBackup = [
     'lessons',
     'folders',
@@ -39,7 +39,7 @@ class BackupService {
         '_meta': {
           'version': _backupVersion,
           'exportedAt': DateTime.now().toIso8601String(),
-          'appVersion': '1.4.0',
+          'appVersion': '1.5.0',
         },
       };
 
