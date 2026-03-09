@@ -1,7 +1,7 @@
 name: book_speaker
 description: English reading assistant for children - tap any sentence to hear it spoken aloud.
 publish_to: 'none'
-version: 1.4.0+5
+version: 1.6.0+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

@@ -6,12 +6,15 @@ import '../models/folder.dart';
 class StorageService {
   static const String _boxName = 'lessons';
   static const String _folderBoxName = 'folders';
+  static const String _translationBoxName = 'translations';
   Box<String>? _box;
   Box<String>? _folderBox;
+  Box<String>? _translationBox;
 
   Future<void> init() async {
     _box ??= await Hive.openBox<String>(_boxName);
     _folderBox ??= await Hive.openBox<String>(_folderBoxName);
+    _translationBox ??= await Hive.openBox<String>(_translationBoxName);
   }
 
   Future<void> saveLesson(Lesson lesson) async {
@@ -128,5 +131,28 @@ class StorageService {
     final json = _box!.get(id);
     if (json == null) return null;
     return Lesson.fromJson(jsonDecode(json) as Map<String, dynamic>);
+  }
+
+  // --- Translation Cache ---
+
+  Future<Map<String, String>> getTranslations(String lessonId) async {
+    await init();
+    final json = _translationBox!.get(lessonId);
+    if (json == null) return {};
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      return map.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveTranslations(String lessonId, Map<String, String> translations) async {
+    await init();
+    if (translations.isEmpty) {
+      await _translationBox!.delete(lessonId);
+    } else {
+      await _translationBox!.put(lessonId, jsonEncode(translations));
+    }
   }
 }

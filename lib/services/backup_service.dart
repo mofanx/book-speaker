@@ -8,16 +8,17 @@ import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
 class BackupService {
-  static const int _backupVersion = 3;
+  static const int _backupVersion = 4;
   static const List<String> _boxesToBackup = [
     'lessons',
     'folders',
     'settings',
     'providers',
+    'translations',
   ];
 
   // String-typed boxes (stored as Box<String> in Hive)
-  static const _stringBoxes = {'lessons', 'folders', 'providers'};
+  static const _stringBoxes = {'lessons', 'folders', 'providers', 'translations'};
 
   BoxBase _getOpenBox(String boxName) {
     if (Hive.isBoxOpen(boxName)) {
@@ -39,7 +40,7 @@ class BackupService {
         '_meta': {
           'version': _backupVersion,
           'exportedAt': DateTime.now().toIso8601String(),
-          'appVersion': '1.5.0',
+          'appVersion': '1.6.0',
         },
       };
 

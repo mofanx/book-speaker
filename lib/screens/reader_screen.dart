@@ -25,8 +25,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   PlayMode _playMode = PlayMode.single;
   double _speechRate = 0.4;
 
-  // Edit mode
-  bool _isEditMode = false;
+  // Selection mode (unified: select + drag + actions)
+  bool _isSelectionMode = false;
   final Set<int> _selectedIndices = {};
 
   // Number display
@@ -59,6 +59,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (mounted) setState(() => _isPlaying = true);
     };
     _initTts();
+    _loadTranslationCache();
+  }
+
+  Future<void> _loadTranslationCache() async {
+    final cached = await storageService.getTranslations(widget.lesson.id);
+    if (cached.isNotEmpty && mounted) {
+      setState(() => _translationCache.addAll(cached));
+    }
+  }
+
+  Future<void> _persistTranslationCache() async {
+    await storageService.saveTranslations(widget.lesson.id, _translationCache);
   }
 
   Future<void> _initTts() async {
@@ -192,12 +204,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  // ---- Edit Mode ----
+  // ---- Selection Mode ----
 
-  void _toggleEditMode() {
+  void _toggleSelectionMode() {
     if (_isPlaying) _stop();
     setState(() {
-      _isEditMode = !_isEditMode;
+      _isSelectionMode = !_isSelectionMode;
       _selectedIndices.clear();
     });
   }
@@ -459,65 +471,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     speakerCtrl.dispose();
   }
 
-  Future<void> _addSentence() async {
-    final textCtrl = TextEditingController();
-    final speakerCtrl = TextEditingController();
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t('add_sentence')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: speakerCtrl,
-              decoration: InputDecoration(
-                labelText: t('speaker_optional'),
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: textCtrl,
-              maxLines: 3,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: t('text'),
-                border: const OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(t('cancel'))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t('add'))),
-        ],
-      ),
-    );
-
-    if (result == true) {
-      final text = textCtrl.text.trim();
-      if (text.isNotEmpty) {
-        _sentences.add(Sentence(
-          text: text,
-          speaker:
-              speakerCtrl.text.trim().isEmpty ? null : speakerCtrl.text.trim(),
-        ));
-        _syncKeys();
-        await _saveChanges();
-        setState(() {});
-      }
-    }
-    textCtrl.dispose();
-    speakerCtrl.dispose();
-  }
-
   void _onReorder(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex--;
     // Batch drag: if the dragged item is selected, move all selected items
@@ -590,6 +543,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _showTranslations = true;
           _isTranslating = false;
         });
+        _persistTranslationCache();
       }
     } catch (e) {
       if (mounted) {
@@ -635,6 +589,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _showTranslations = true;
           _isTranslating = false;
         });
+        _persistTranslationCache();
       }
     } catch (e) {
       if (mounted) {
@@ -679,6 +634,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _showTranslations = true;
           _isTranslating = false;
         });
+        _persistTranslationCache();
       }
     } catch (e) {
       if (mounted) {
@@ -700,14 +656,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
         children: [
           if (_isSearching) _buildSearchBar(),
           Expanded(
-              child: _isEditMode ? _buildEditList() : _buildPlayList()),
-          if (!_isEditMode) _buildControlBar(),
+              child: _isSelectionMode ? _buildSelectionList() : _buildPlayList()),
+          if (!_isSelectionMode) _buildControlBar(),
         ],
       ),
-      floatingActionButton: _isEditMode
-          ? FloatingActionButton(
-              onPressed: _addSentence, child: const Icon(Icons.add))
-          : null,
+      bottomNavigationBar: _isSelectionMode ? _buildActionBar() : null,
     );
   }
 
@@ -761,79 +714,30 @@ class _ReaderScreenState extends State<ReaderScreen> {
   PreferredSizeWidget _buildAppBar() {
     final hasTranslationConfig = settingsService.translationProviderId.isNotEmpty &&
         settingsService.translationModel.isNotEmpty;
+    final cs = Theme.of(context).colorScheme;
     return AppBar(
       title: Text(widget.lesson.title),
       actions: [
-        // Search toggle (both modes)
+        // Search toggle (always)
         IconButton(
           icon: Icon(_isSearching ? Icons.search_off : Icons.search),
           tooltip: t('search'),
           onPressed: _toggleSearch,
         ),
-        if (_isEditMode) ...[
-          TextButton(
-            onPressed: _selectAll,
-            child: Text(_selectedIndices.length == _sentences.length
-                ? t('deselect')
-                : t('select_all')),
-          ),
-          if (_selectedIndices.length >= 2)
-            IconButton(
-              icon: const Icon(Icons.merge_type),
-              tooltip: t('merge_sentences'),
-              onPressed: _mergeSelected,
-            ),
-          if (_selectedIndices.length == 1)
-            IconButton(
-              icon: const Icon(Icons.content_cut),
-              tooltip: t('split_sentence'),
-              onPressed: () => _splitSentence(_selectedIndices.first),
-            ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (v) {
-              if (v == 'invert') _invertSelection();
-              if (v == 'export') _exportSelectedToClipboard();
-              if (v == 'translate') _translateSelected();
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'invert', child: Text(t('invert_selection'))),
-              if (_selectedIndices.isNotEmpty) ...[
-                PopupMenuItem(value: 'export', child: Text(t('export_selected'))),
-                if (hasTranslationConfig)
-                  PopupMenuItem(value: 'translate', child: Text(t('translate_selected'))),
-              ],
-            ],
-          ),
+        // Show/hide translation (always visible when config exists)
+        if (hasTranslationConfig)
           IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            tooltip: t('delete_selected'),
-            onPressed: _selectedIndices.isNotEmpty ? _deleteSelected : null,
+            icon: Icon(
+              _showTranslations ? Icons.visibility : Icons.visibility_off,
+              color: _showTranslations ? cs.primary : null,
+              size: 22,
+            ),
+            tooltip: _showTranslations ? t('hide_translation') : t('show_translation'),
+            onPressed: () => setState(() => _showTranslations = !_showTranslations),
           ),
-        ] else ...[
-          // Number toggle
-          IconButton(
-            icon: Icon(_showNumbers
-                ? Icons.format_list_numbered
-                : Icons.format_list_bulleted),
-            tooltip: _showNumbers ? t('hide_numbers') : t('show_numbers'),
-            onPressed: () => setState(() => _showNumbers = !_showNumbers),
-          ),
-          if (hasTranslationConfig) ...[
-            // Show/hide translation toggle (only when cache exists)
-            if (_hasCache)
-              IconButton(
-                icon: Icon(
-                  _showTranslations ? Icons.visibility : Icons.visibility_off,
-                  color: _showTranslations
-                      ? Theme.of(context).colorScheme.primary
-                      : null,
-                  size: 22,
-                ),
-                tooltip: _showTranslations ? t('hide_translation') : t('show_translation'),
-                onPressed: () => setState(() => _showTranslations = !_showTranslations),
-              ),
-            // Translate actions
+        if (!_isSelectionMode) ...[
+          // Translate all button
+          if (hasTranslationConfig)
             _isTranslating
                 ? const Padding(
                     padding: EdgeInsets.all(12),
@@ -842,23 +746,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
-                : PopupMenuButton<String>(
+                : IconButton(
                     icon: const Icon(Icons.translate),
-                    tooltip: t('translate'),
-                    onSelected: (v) {
-                      if (v == 'all') _translateAll();
-                      if (v == 'single' && _currentIndex >= 0) _translateSingle(_currentIndex);
-                      if (v == 'retranslate') _retranslateAll();
-                    },
-                    itemBuilder: (_) => [
-                      PopupMenuItem(value: 'all', child: Text(t('translate_all'))),
-                      if (_currentIndex >= 0)
-                        PopupMenuItem(value: 'single', child: Text(t('translate_current'))),
-                      if (_hasCache)
-                        PopupMenuItem(value: 'retranslate', child: Text(t('retranslate_all'))),
-                    ],
+                    tooltip: t('translate_all'),
+                    onPressed: _translateAll,
                   ),
-          ],
+          // Number toggle
+          IconButton(
+            icon: Icon(_showNumbers
+                ? Icons.format_list_numbered
+                : Icons.format_list_bulleted),
+            tooltip: _showNumbers ? t('hide_numbers') : t('show_numbers'),
+            onPressed: () => setState(() => _showNumbers = !_showNumbers),
+          ),
+          // Play mode
           PopupMenuButton<PlayMode>(
             icon: Icon(_playModeIcon()),
             tooltip: t('play_mode'),
@@ -871,10 +772,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ],
           ),
         ],
+        // Selection toggle
         IconButton(
-          icon: Icon(_isEditMode ? Icons.check : Icons.edit_note),
-          tooltip: _isEditMode ? t('done') : t('edit'),
-          onPressed: _toggleEditMode,
+          icon: Icon(_isSelectionMode ? Icons.close : Icons.checklist),
+          tooltip: _isSelectionMode ? t('cancel') : t('select'),
+          onPressed: _toggleSelectionMode,
         ),
       ],
     );
@@ -905,10 +807,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
           onLongPress: () {
             final hasConfig = settingsService.translationProviderId.isNotEmpty &&
                 settingsService.translationModel.isNotEmpty;
-            if (hasConfig && !_translationCache.containsKey(sentence.text)) {
+            if (hasConfig) {
               _translateSingle(index);
-            } else {
-              _toggleEditMode();
             }
           },
           child: AnimatedContainer(
@@ -1021,9 +921,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // ---- Edit Mode List ----
+  // ---- Selection Mode List ----
 
-  Widget _buildEditList() {
+  Widget _buildSelectionList() {
     final cs = Theme.of(context).colorScheme;
     return ReorderableListView.builder(
       scrollController: _scrollController,
@@ -1048,36 +948,30 @@ class _ReaderScreenState extends State<ReaderScreen> {
         return Card(
           key: ValueKey(sentence.id),
           margin: const EdgeInsets.symmetric(vertical: 4),
-          color: isActiveMatch
-              ? Colors.amber.withValues(alpha: 0.2)
-              : isMatch
-                  ? Colors.amber.withValues(alpha: 0.1)
-                  : null,
+          color: isSelected
+              ? cs.primaryContainer.withValues(alpha: 0.3)
+              : isActiveMatch
+                  ? Colors.amber.withValues(alpha: 0.2)
+                  : isMatch
+                      ? Colors.amber.withValues(alpha: 0.1)
+                      : null,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => _editSentence(index),
+            onTap: () => _toggleSelection(index),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Row(
                 children: [
-                  // Sentence number
-                  SizedBox(
-                    width: 28,
-                    child: Text(
-                      '${index + 1}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: cs.onSurface.withValues(alpha: 0.45),
-                      ),
+                  // Circular checkbox
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                      color: isSelected ? cs.primary : Colors.grey,
+                      size: 24,
                     ),
-                  ),
-                  Checkbox(
-                    value: isSelected,
-                    onChanged: (_) => _toggleSelection(index),
                   ),
                   Expanded(
                     child: Column(
@@ -1093,17 +987,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             style: TextStyle(
                                 fontSize: 16,
                                 color: cs.onSurface)),
+                        if (_showTranslations && _translationCache.containsKey(sentence.text))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              _translationCache[sentence.text]!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.4,
+                                color: cs.onSurface.withValues(alpha: 0.6),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 20),
-                    onPressed: () => _editSentence(index),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline,
-                        size: 20, color: Colors.red),
-                    onPressed: () => _deleteSingle(index),
                   ),
                   ReorderableDragStartListener(
                     index: index,
@@ -1119,6 +1017,139 @@ class _ReaderScreenState extends State<ReaderScreen> {
         );
       },
     );
+  }
+
+  // ---- Selection Action Bar ----
+
+  Widget _buildActionBar() {
+    final count = _selectedIndices.length;
+    final hasTranslationConfig = settingsService.translationProviderId.isNotEmpty &&
+        settingsService.translationModel.isNotEmpty;
+    return BottomAppBar(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: count + select all + invert
+          Row(
+            children: [
+              const SizedBox(width: 16),
+              Text('$count ${t('selected')}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              TextButton(
+                onPressed: _selectAll,
+                child: Text(_selectedIndices.length == _sentences.length
+                    ? t('deselect')
+                    : t('select_all')),
+              ),
+              TextButton(
+                onPressed: _invertSelection,
+                child: Text(t('invert_selection')),
+              ),
+            ],
+          ),
+          // Row 2: scrollable actions
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+            child: Row(
+              children: [
+                if (count == 1)
+                  _sentenceActionChip(Icons.edit, t('edit'), () => _editSentence(_selectedIndices.first)),
+                if (count == 1)
+                  _sentenceActionChip(Icons.content_cut, t('split_sentence'), () => _splitSentence(_selectedIndices.first)),
+                if (count >= 2)
+                  _sentenceActionChip(Icons.merge_type, t('merge_sentences'), _mergeSelected),
+                _sentenceActionChip(Icons.add, t('add_sentence'), _addSentenceAtPosition),
+                if (count > 0 && hasTranslationConfig)
+                  _sentenceActionChip(Icons.translate, t('translate_selected'), _translateSelected),
+                if (count > 0)
+                  _sentenceActionChip(Icons.ios_share, t('export_selected'), _exportSelectedToClipboard),
+                if (count > 0)
+                  _sentenceActionChip(Icons.delete, t('delete'), _deleteSelected, isDestructive: true),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sentenceActionChip(IconData icon, String label, VoidCallback onPressed, {bool isDestructive = false}) {
+    final color = isDestructive ? Colors.red : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ActionChip(
+        avatar: Icon(icon, size: 18, color: color),
+        label: Text(label, style: TextStyle(fontSize: 12, color: color)),
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  Future<void> _addSentenceAtPosition() async {
+    final textCtrl = TextEditingController();
+    final speakerCtrl = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('add_sentence')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: speakerCtrl,
+              decoration: InputDecoration(
+                labelText: t('speaker_optional'),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textCtrl,
+              maxLines: 3,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: t('text'),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('cancel'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t('add'))),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final text = textCtrl.text.trim();
+      if (text.isNotEmpty) {
+        final newSentence = Sentence(
+          text: text,
+          speaker: speakerCtrl.text.trim().isEmpty ? null : speakerCtrl.text.trim(),
+        );
+        // Insert after last selected item, or at end
+        if (_selectedIndices.isNotEmpty) {
+          final insertAt = _selectedIndices.reduce((a, b) => a > b ? a : b) + 1;
+          _sentences.insert(insertAt, newSentence);
+        } else {
+          _sentences.add(newSentence);
+        }
+        _syncKeys();
+        await _saveChanges();
+        setState(() {});
+      }
+    }
+    textCtrl.dispose();
+    speakerCtrl.dispose();
   }
 
   // ---- Bottom Control Bar ----

@@ -33,8 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
-  // Reorder mode
-  bool _isReorderMode = false;
 
   Future<void> _loadData() async {
     final allFolders = await storageService.getAllFolders();
@@ -319,35 +317,100 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _toggleReorderMode() {
+  void _selectAllItems() {
     setState(() {
-      _isReorderMode = !_isReorderMode;
-      if (_isReorderMode) {
-        _isSelectionMode = false;
+      if (_selectedFolderIds.length == _folders.length &&
+          _selectedLessonIds.length == _lessons.length) {
         _selectedFolderIds.clear();
         _selectedLessonIds.clear();
-        _isSearching = false;
-        _searchController.clear();
-        _searchQuery = '';
+      } else {
+        _selectedFolderIds.addAll(_folders.map((f) => f.id));
+        _selectedLessonIds.addAll(_lessons.map((l) => l.id));
       }
     });
   }
 
+  void _invertSelectionItems() {
+    setState(() {
+      final allFIds = _folders.map((f) => f.id).toSet();
+      final allLIds = _lessons.map((l) => l.id).toSet();
+      final newF = allFIds.difference(_selectedFolderIds);
+      final newL = allLIds.difference(_selectedLessonIds);
+      _selectedFolderIds
+        ..clear()
+        ..addAll(newF);
+      _selectedLessonIds
+        ..clear()
+        ..addAll(newL);
+    });
+  }
+
+  void _exportSelectedItems() {
+    final buf = StringBuffer();
+    for (final f in _folders.where((f) => _selectedFolderIds.contains(f.id))) {
+      buf.writeln('[${f.name}]');
+    }
+    for (final l in _lessons.where((l) => _selectedLessonIds.contains(l.id))) {
+      buf.writeln('${l.title}\n${_formatLessonText(l)}\n');
+    }
+    final text = buf.toString().trim();
+    if (text.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: text));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('exported_to_clipboard'))),
+      );
+    }
+  }
+
   Future<void> _onReorderFolders(int oldIndex, int newIndex) async {
     if (newIndex > oldIndex) newIndex--;
-    setState(() {
+    // Batch drag: if the dragged folder is selected, move all selected folders
+    if (_selectedFolderIds.contains(_folders[oldIndex].id) && _selectedFolderIds.length > 1) {
+      final selectedIndices = <int>[];
+      for (int i = 0; i < _folders.length; i++) {
+        if (_selectedFolderIds.contains(_folders[i].id)) selectedIndices.add(i);
+      }
+      final items = selectedIndices.map((i) => _folders[i]).toList();
+      for (int i = selectedIndices.length - 1; i >= 0; i--) {
+        _folders.removeAt(selectedIndices[i]);
+      }
+      int insertAt = newIndex;
+      for (final idx in selectedIndices) {
+        if (idx < newIndex) insertAt--;
+      }
+      insertAt = insertAt.clamp(0, _folders.length);
+      _folders.insertAll(insertAt, items);
+    } else {
       final item = _folders.removeAt(oldIndex);
       _folders.insert(newIndex, item);
-    });
+    }
+    setState(() {});
     await _saveFolderOrder();
   }
 
   Future<void> _onReorderLessons(int oldIndex, int newIndex) async {
     if (newIndex > oldIndex) newIndex--;
-    setState(() {
+    // Batch drag
+    if (_selectedLessonIds.contains(_lessons[oldIndex].id) && _selectedLessonIds.length > 1) {
+      final selectedIndices = <int>[];
+      for (int i = 0; i < _lessons.length; i++) {
+        if (_selectedLessonIds.contains(_lessons[i].id)) selectedIndices.add(i);
+      }
+      final items = selectedIndices.map((i) => _lessons[i]).toList();
+      for (int i = selectedIndices.length - 1; i >= 0; i--) {
+        _lessons.removeAt(selectedIndices[i]);
+      }
+      int insertAt = newIndex;
+      for (final idx in selectedIndices) {
+        if (idx < newIndex) insertAt--;
+      }
+      insertAt = insertAt.clamp(0, _lessons.length);
+      _lessons.insertAll(insertAt, items);
+    } else {
       final item = _lessons.removeAt(oldIndex);
       _lessons.insert(newIndex, item);
-    });
+    }
+    setState(() {});
     await _saveLessonOrder();
   }
 
@@ -396,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             : null,
         actions: [
-          if (hasContent && !_isReorderMode) ...[
+          if (hasContent) ...[
             IconButton(
               icon: Icon(_isSearching ? Icons.search_off : Icons.search),
               tooltip: t('search'),
@@ -408,13 +471,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _toggleSelectionMode,
             ),
           ],
-          if (hasContent && !_isSelectionMode)
-            IconButton(
-              icon: Icon(_isReorderMode ? Icons.check : Icons.swap_vert),
-              tooltip: _isReorderMode ? t('done') : t('reorder'),
-              onPressed: _toggleReorderMode,
-            ),
-          if (!_isSelectionMode && !_isReorderMode && widget.folder == null)
+          if (!_isSelectionMode && widget.folder == null)
             IconButton(
               icon: const Icon(Icons.settings),
               tooltip: t('settings'),
@@ -453,27 +510,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     if (_isSearching) _buildSearchBar(),
                     Expanded(
-                      child: _isReorderMode
-                          ? _buildReorderList()
+                      child: _isSelectionMode
+                          ? _buildSelectionList()
                           : ListView.builder(
                               padding: const EdgeInsets.all(16),
                               itemCount: folders.length + lessons.length,
                               itemBuilder: (context, index) {
                                 if (index < folders.length) {
                                   final folder = folders[index];
-                                  final isSelected = _selectedFolderIds.contains(folder.id);
-                                  return _buildFolderCard(folder, isSelected);
+                                  return _buildFolderCard(folder, false);
                                 } else {
                                   final lesson = lessons[index - folders.length];
-                                  final isSelected = _selectedLessonIds.contains(lesson.id);
-                                  return _buildLessonCard(lesson, isSelected, index - folders.length);
+                                  return _buildLessonCard(lesson, false, index - folders.length);
                                 }
                               },
                             ),
                     ),
                   ],
                 ),
-      floatingActionButton: (_isSelectionMode || _isReorderMode)
+      floatingActionButton: _isSelectionMode
           ? null
           : FloatingActionButton(
               onPressed: _showAddMenu,
@@ -507,7 +562,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildReorderList() {
+  Widget _buildSelectionList() {
+    final cs = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -519,7 +575,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(t('folders_section'),
                   style: TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: cs.primary,
                   )),
             ),
             ReorderableListView.builder(
@@ -532,12 +588,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               itemBuilder: (_, i) {
                 final f = _folders[i];
+                final selected = _selectedFolderIds.contains(f.id);
                 return Card(
                   key: ValueKey('folder_${f.id}'),
                   margin: const EdgeInsets.only(bottom: 8),
+                  color: selected ? cs.primaryContainer.withValues(alpha: 0.3) : null,
                   child: ListTile(
-                    leading: Icon(Icons.folder, color: Colors.orange.shade300, size: 36),
-                    title: Text(f.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    leading: GestureDetector(
+                      onTap: () => _toggleFolderSelection(f.id),
+                      child: Icon(
+                        selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                        color: selected ? cs.primary : Colors.grey,
+                        size: 28,
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Icon(Icons.folder, color: Colors.orange.shade300, size: 28),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(f.name, style: const TextStyle(fontWeight: FontWeight.bold))),
+                      ],
+                    ),
                     trailing: ReorderableDragStartListener(
                       index: i,
                       child: const Icon(Icons.drag_handle, color: Colors.grey),
@@ -554,7 +625,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(t('contents_section'),
                   style: TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: cs.primary,
                   )),
             ),
             ReorderableListView.builder(
@@ -567,13 +638,19 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               itemBuilder: (_, i) {
                 final l = _lessons[i];
+                final selected = _selectedLessonIds.contains(l.id);
                 return Card(
                   key: ValueKey('lesson_${l.id}'),
                   margin: const EdgeInsets.only(bottom: 8),
+                  color: selected ? cs.primaryContainer.withValues(alpha: 0.3) : null,
                   child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.blue[100],
-                      child: Text('${i + 1}', style: TextStyle(color: Colors.blue[800])),
+                    leading: GestureDetector(
+                      onTap: () => _toggleLessonSelection(l.id),
+                      child: Icon(
+                        selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                        color: selected ? cs.primary : Colors.grey,
+                        size: 28,
+                      ),
                     ),
                     title: Text(l.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(t('sentences_detected').replaceAll('%d', '${l.sentences.length}')),
@@ -684,27 +761,77 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSelectionBottomBar() {
     final count = _selectedFolderIds.length + _selectedLessonIds.length;
+    final allCount = _folders.length + _lessons.length;
+    final allSelected = count == allCount && allCount > 0;
     return BottomAppBar(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text('$count ${t('selected')}'),
-          TextButton.icon(
-            icon: const Icon(Icons.drive_file_move),
-            label: Text(t('move')),
-            onPressed: count > 0 ? () => _moveSelected() : null,
+          // Row 1: count + select all + invert
+          Row(
+            children: [
+              const SizedBox(width: 16),
+              Text('$count ${t('selected')}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              TextButton(
+                onPressed: _selectAllItems,
+                child: Text(allSelected ? t('deselect') : t('select_all')),
+              ),
+              TextButton(
+                onPressed: _invertSelectionItems,
+                child: Text(t('invert_selection')),
+              ),
+            ],
           ),
-          TextButton.icon(
-            icon: const Icon(Icons.copy),
-            label: Text(t('copy')),
-            onPressed: count > 0 ? () => _copySelected() : null,
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            label: Text(t('delete'), style: const TextStyle(color: Colors.red)),
-            onPressed: count > 0 ? () => _deleteSelected() : null,
+          // Row 2: scrollable actions
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+            child: Row(
+              children: [
+                if (count == 1)
+                  _actionChip(Icons.edit, t('rename'), () {
+                    if (_selectedFolderIds.length == 1) {
+                      final f = _folders.firstWhere((f) => f.id == _selectedFolderIds.first);
+                      _renameFolder(f);
+                    } else if (_selectedLessonIds.length == 1) {
+                      final l = _lessons.firstWhere((l) => l.id == _selectedLessonIds.first);
+                      _renameLesson(l);
+                    }
+                  }),
+                _actionChip(Icons.create_new_folder, t('add_folder'), _createFolder),
+                _actionChip(Icons.note_add, t('add_content'), () async {
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ImportScreen(folderId: widget.folder?.id),
+                    ),
+                  );
+                  if (result == true) _loadData();
+                }),
+                if (count > 0) ...[
+                  _actionChip(Icons.drive_file_move, t('move'), _moveSelected),
+                  _actionChip(Icons.copy, t('copy'), _copySelected),
+                  _actionChip(Icons.ios_share, t('export'), _exportSelectedItems),
+                  _actionChip(Icons.delete, t('delete'), _deleteSelected, isDestructive: true),
+                ],
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _actionChip(IconData icon, String label, VoidCallback onPressed, {bool isDestructive = false}) {
+    final color = isDestructive ? Colors.red : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ActionChip(
+        avatar: Icon(icon, size: 18, color: color),
+        label: Text(label, style: TextStyle(fontSize: 12, color: color)),
+        onPressed: onPressed,
       ),
     );
   }
