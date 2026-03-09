@@ -844,6 +844,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _actionChip(Icons.ios_share, t('export'), _exportSelectedItems),
                   _actionChip(Icons.delete, t('delete'), _deleteSelected, isDestructive: true),
                 ],
+              ],
             ),
           ),
         ],
