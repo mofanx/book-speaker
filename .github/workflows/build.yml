@@ -112,6 +112,15 @@ jobs:
 
           echo "--- Signing configured in $BUILD ---"
 
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | sed 's/+.*//' | tr -d ' ')
+          BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//' | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build=$BUILD" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION+$BUILD"
+
       - name: Build Release APK
         env:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -119,15 +128,8 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: flutter build apk --release
 
-      - name: Get App Version
-        id: app_version
-        run: |
-          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //')
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/book-speaker-v$VERSION.apk
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: book-speaker-v${{ env.VERSION }}
-          path: build/app/outputs/flutter-apk/book-speaker-v${{ env.VERSION }}.apk
+          name: book-speaker-v${{ steps.version.outputs.version }}(${{ steps.version.outputs.build }})
+          path: build/app/outputs/flutter-apk/app-release.apk

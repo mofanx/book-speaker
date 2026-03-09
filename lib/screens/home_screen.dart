@@ -785,21 +785,18 @@ class _HomeScreenState extends State<HomeScreen> {
     final count = _selectedFolderIds.length + _selectedLessonIds.length;
     final allCount = _folders.length + _lessons.length;
     final allSelected = count == allCount && allCount > 0;
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    return BottomAppBar(
-      padding: EdgeInsets.only(
-        left: 8,
-        right: 8,
-        top: 8,
-        bottom: bottomPadding > 0 ? bottomPadding : 16,
-      ),
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    return Material(
+      elevation: 3,
+      color: Theme.of(context).colorScheme.surface,
+      surfaceTintColor: Theme.of(context).colorScheme.surfaceTint,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Row 1: count + select all + invert
           Row(
             children: [
-              const SizedBox(width: 8),
+              const SizedBox(width: 16),
               Text('$count ${t('selected')}',
                   style: const TextStyle(fontWeight: FontWeight.w600)),
               const Spacer(),
@@ -816,6 +813,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // Row 2: scrollable actions
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 8, right: 8),
             child: Row(
               children: [
                 if (count == 1)
@@ -847,6 +845,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
+          // System navigation bar inset
+          SizedBox(height: bottomInset + 8),
         ],
       ),
     );
