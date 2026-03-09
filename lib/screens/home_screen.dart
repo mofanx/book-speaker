@@ -363,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _onReorderFolders(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex--;
     // Batch drag: if the dragged folder is selected, move all selected folders
     if (_selectedFolderIds.contains(_folders[oldIndex].id) && _selectedFolderIds.length > 1) {
       final selectedIndices = <int>[];
@@ -381,6 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
       insertAt = insertAt.clamp(0, _folders.length);
       _folders.insertAll(insertAt, items);
     } else {
+      if (newIndex > oldIndex) newIndex--;
       final item = _folders.removeAt(oldIndex);
       _folders.insert(newIndex, item);
     }
@@ -389,7 +389,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _onReorderLessons(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex--;
     // Batch drag
     if (_selectedLessonIds.contains(_lessons[oldIndex].id) && _selectedLessonIds.length > 1) {
       final selectedIndices = <int>[];
@@ -407,6 +406,7 @@ class _HomeScreenState extends State<HomeScreen> {
       insertAt = insertAt.clamp(0, _lessons.length);
       _lessons.insertAll(insertAt, items);
     } else {
+      if (newIndex > oldIndex) newIndex--;
       final item = _lessons.removeAt(oldIndex);
       _lessons.insert(newIndex, item);
     }
@@ -594,13 +594,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   margin: const EdgeInsets.only(bottom: 8),
                   color: selected ? cs.primaryContainer.withValues(alpha: 0.3) : null,
                   child: ListTile(
-                    leading: GestureDetector(
-                      onTap: () => _toggleFolderSelection(f.id),
-                      child: Icon(
-                        selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                        color: selected ? cs.primary : Colors.grey,
-                        size: 28,
-                      ),
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          child: Text('${i + 1}', textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                              color: cs.onSurface.withValues(alpha: 0.45))),
+                        ),
+                        GestureDetector(
+                          onTap: () => _toggleFolderSelection(f.id),
+                          child: Icon(
+                            selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                            color: selected ? cs.primary : Colors.grey,
+                            size: 28,
+                          ),
+                        ),
+                      ],
                     ),
                     title: Row(
                       children: [
@@ -644,13 +655,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   margin: const EdgeInsets.only(bottom: 8),
                   color: selected ? cs.primaryContainer.withValues(alpha: 0.3) : null,
                   child: ListTile(
-                    leading: GestureDetector(
-                      onTap: () => _toggleLessonSelection(l.id),
-                      child: Icon(
-                        selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                        color: selected ? cs.primary : Colors.grey,
-                        size: 28,
-                      ),
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          child: Text('${i + 1}', textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                              color: cs.onSurface.withValues(alpha: 0.45))),
+                        ),
+                        GestureDetector(
+                          onTap: () => _toggleLessonSelection(l.id),
+                          child: Icon(
+                            selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                            color: selected ? cs.primary : Colors.grey,
+                            size: 28,
+                          ),
+                        ),
+                      ],
                     ),
                     title: Text(l.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(t('sentences_detected').replaceAll('%d', '${l.sentences.length}')),
@@ -764,31 +786,34 @@ class _HomeScreenState extends State<HomeScreen> {
     final allCount = _folders.length + _lessons.length;
     final allSelected = count == allCount && allCount > 0;
     return BottomAppBar(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Row 1: count + select all + invert
-          Row(
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(width: 16),
-              Text('$count ${t('selected')}',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const Spacer(),
-              TextButton(
-                onPressed: _selectAllItems,
-                child: Text(allSelected ? t('deselect') : t('select_all')),
+              // Row 1: count + select all + invert
+              Row(
+                children: [
+                  const SizedBox(width: 16),
+                  Text('$count ${t('selected')}',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _selectAllItems,
+                    child: Text(allSelected ? t('deselect') : t('select_all')),
+                  ),
+                  TextButton(
+                    onPressed: _invertSelectionItems,
+                    child: Text(t('invert_selection')),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: _invertSelectionItems,
-                child: Text(t('invert_selection')),
-              ),
-            ],
-          ),
-          // Row 2: scrollable actions
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
-            child: Row(
+              // Row 2: scrollable actions
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+                child: Row(
               children: [
                 if (count == 1)
                   _actionChip(Icons.edit, t('rename'), () {
@@ -820,6 +845,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+          ),
+        ),
       ),
     );
   }

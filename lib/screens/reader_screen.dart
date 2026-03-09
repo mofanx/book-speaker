@@ -472,7 +472,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _onReorder(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex--;
     // Batch drag: if the dragged item is selected, move all selected items
     if (_selectedIndices.contains(oldIndex) && _selectedIndices.length > 1) {
       final sorted = _selectedIndices.toList()..sort();
@@ -495,6 +494,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _selectedIndices.add(insertAt + i);
       }
     } else {
+      // Single drag: standard adjustment
+      if (newIndex > oldIndex) newIndex--;
       final item = _sentences.removeAt(oldIndex);
       _sentences.insert(newIndex, item);
       // Update selection if the moved item was selected
@@ -964,9 +965,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Row(
                 children: [
+                  // Sequence number
+                  SizedBox(
+                    width: 28,
+                    child: Text(
+                      '${index + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ),
                   // Circular checkbox
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.only(right: 8),
                     child: Icon(
                       isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
                       color: isSelected ? cs.primary : Colors.grey,
@@ -1026,34 +1040,37 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final hasTranslationConfig = settingsService.translationProviderId.isNotEmpty &&
         settingsService.translationModel.isNotEmpty;
     return BottomAppBar(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Row 1: count + select all + invert
-          Row(
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(width: 16),
-              Text('$count ${t('selected')}',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const Spacer(),
-              TextButton(
-                onPressed: _selectAll,
-                child: Text(_selectedIndices.length == _sentences.length
-                    ? t('deselect')
-                    : t('select_all')),
+              // Row 1: count + select all + invert
+              Row(
+                children: [
+                  const SizedBox(width: 16),
+                  Text('$count ${t('selected')}',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _selectAll,
+                    child: Text(_selectedIndices.length == _sentences.length
+                        ? t('deselect')
+                        : t('select_all')),
+                  ),
+                  TextButton(
+                    onPressed: _invertSelection,
+                    child: Text(t('invert_selection')),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: _invertSelection,
-                child: Text(t('invert_selection')),
-              ),
-            ],
-          ),
-          // Row 2: scrollable actions
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
-            child: Row(
-              children: [
+              // Row 2: scrollable actions
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+                child: Row(
+                  children: [
                 if (count == 1)
                   _sentenceActionChip(Icons.edit, t('edit'), () => _editSentence(_selectedIndices.first)),
                 if (count == 1)
@@ -1067,10 +1084,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   _sentenceActionChip(Icons.ios_share, t('export_selected'), _exportSelectedToClipboard),
                 if (count > 0)
                   _sentenceActionChip(Icons.delete, t('delete'), _deleteSelected, isDestructive: true),
-              ],
-            ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/settings.dart';
 import '../models/ai_provider.dart';
 import '../services/service_locator.dart';
@@ -27,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _translationModelCtrl;
   bool _ttsTesting = false;
   String? _ttsTestResult;
+  String _appVersion = '';
 
   late TtsService _tts;
 
@@ -41,6 +43,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _translationModelCtrl = TextEditingController(text: s.translationModel);
     _tts = TtsService.instance(settingsService);
     _tts.init();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) setState(() => _appVersion = info.version);
   }
 
   @override
@@ -490,7 +498,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Book Speaker'),
-            subtitle: Text('v1.4.0 — ${t('app_name')}'),
+            subtitle: Text('v${_appVersion.isNotEmpty ? _appVersion : '...'} — ${t('app_name')}'),
           ),
           ListTile(
             leading: const Icon(Icons.system_update),
@@ -498,7 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _checkForUpdate,
           ),
           ListTile(
-            leading: const Icon(Icons.code, color: Colors.black87),
+            leading: Icon(Icons.code, color: Theme.of(context).colorScheme.onSurface),
             title: Text(t('about_github')),
             subtitle: const Text(
               'https://github.com/mofanx/book-speaker',
@@ -872,131 +880,104 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String defaultPrompt,
     required ValueChanged<String> onSave,
   }) {
-    final ctrl = TextEditingController(text: initialValue);
-    final cs = Theme.of(context).colorScheme;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => _PromptEditorPage(
+          label: label,
+          initialValue: initialValue,
+          defaultPrompt: defaultPrompt,
+          onSave: onSave,
+        ),
+      ),
+    );
+  }
+}
 
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'PromptDialog',
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, anim1, anim2) {
-        return Scaffold(
-          backgroundColor: Colors.transparent,
-          body: GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              color: Colors.black54,
-              alignment: Alignment.center,
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 20,
-                bottom: (MediaQuery.of(context).viewInsets.bottom > 0
-                    ? MediaQuery.of(context).viewInsets.bottom + 10
-                    : MediaQuery.of(context).padding.bottom + 20),
-                left: 20,
-                right: 20,
-              ),
-              child: GestureDetector(
-                onTap: () {}, // consume tap to prevent dismissing when clicking inside card
-                child: Hero(
-                  tag: 'prompt_editor_$label',
-                  child: Material(
-                    borderRadius: BorderRadius.circular(16),
-                    elevation: 8,
-                    child: Container(
-                      width: double.infinity,
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height
-                            - MediaQuery.of(context).viewInsets.bottom
-                            - MediaQuery.of(context).padding.top
-                            - MediaQuery.of(context).padding.bottom
-                            - 60,
-                      ),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: cs.surface,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.tune, color: cs.primary),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  label,
-                                  style: const TextStyle(
-                                      fontSize: 18, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () => Navigator.of(context).pop(),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Expanded(
-                            child: TextField(
-                              controller: ctrl,
-                              maxLines: null,
-                              expands: true,
-                              textAlignVertical: TextAlignVertical.top,
-                              decoration: InputDecoration(
-                                hintText: defaultPrompt,
-                                hintStyle: TextStyle(
-                                  color: cs.onSurface.withOpacity(0.4),
-                                  fontStyle: FontStyle.italic,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                filled: true,
-                                fillColor: cs.surfaceContainerHighest.withOpacity(0.2),
-                              ),
-                              style: const TextStyle(fontSize: 14, height: 1.5),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              TextButton.icon(
-                                onPressed: () {
-                                  ctrl.clear();
-                                  onSave('');
-                                  Navigator.of(context).pop();
-                                },
-                                icon: const Icon(Icons.refresh, size: 18),
-                                label: Text(t('reset_to_default')),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: cs.error,
-                                ),
-                              ),
-                              FilledButton(
-                                onPressed: () {
-                                  onSave(ctrl.text.trim());
-                                  Navigator.of(context).pop();
-                                },
-                                child: Text(t('save')),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+class _PromptEditorPage extends StatefulWidget {
+  final String label;
+  final String initialValue;
+  final String defaultPrompt;
+  final ValueChanged<String> onSave;
+
+  const _PromptEditorPage({
+    required this.label,
+    required this.initialValue,
+    required this.defaultPrompt,
+    required this.onSave,
+  });
+
+  @override
+  State<_PromptEditorPage> createState() => _PromptEditorPageState();
+}
+
+class _PromptEditorPageState extends State<_PromptEditorPage> {
+  late TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.label),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              _ctrl.clear();
+              widget.onSave('');
+              Navigator.of(context).pop();
+            },
+            icon: Icon(Icons.refresh, size: 18, color: cs.error),
+            label: Text(t('reset_to_default'),
+                style: TextStyle(color: cs.error)),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton(
+              onPressed: () {
+                widget.onSave(_ctrl.text.trim());
+                Navigator.of(context).pop();
+              },
+              child: Text(t('save')),
             ),
           ),
-        );
-      },
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: TextField(
+          controller: _ctrl,
+          maxLines: null,
+          expands: true,
+          autofocus: true,
+          textAlignVertical: TextAlignVertical.top,
+          decoration: InputDecoration(
+            hintText: widget.defaultPrompt,
+            hintMaxLines: 20,
+            hintStyle: TextStyle(
+              color: cs.onSurface.withValues(alpha: 0.4),
+              fontStyle: FontStyle.italic,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.2),
+          ),
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+      ),
     );
   }
 }
