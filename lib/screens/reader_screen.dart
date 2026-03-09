@@ -1039,38 +1039,41 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final count = _selectedIndices.length;
     final hasTranslationConfig = settingsService.translationProviderId.isNotEmpty &&
         settingsService.translationModel.isNotEmpty;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     return BottomAppBar(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      padding: EdgeInsets.only(
+        left: 8,
+        right: 8,
+        top: 8,
+        bottom: bottomPadding > 0 ? bottomPadding : 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: count + select all + invert
+          Row(
             children: [
-              // Row 1: count + select all + invert
-              Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Text('$count ${t('selected')}',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: _selectAll,
-                    child: Text(_selectedIndices.length == _sentences.length
-                        ? t('deselect')
-                        : t('select_all')),
-                  ),
-                  TextButton(
-                    onPressed: _invertSelection,
-                    child: Text(t('invert_selection')),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              Text('$count ${t('selected')}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              TextButton(
+                onPressed: _selectAll,
+                child: Text(_selectedIndices.length == _sentences.length
+                    ? t('deselect')
+                    : t('select_all')),
               ),
-              // Row 2: scrollable actions
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
-                child: Row(
-                  children: [
+              TextButton(
+                onPressed: _invertSelection,
+                child: Text(t('invert_selection')),
+              ),
+            ],
+          ),
+          // Row 2: scrollable actions
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
                 if (count == 1)
                   _sentenceActionChip(Icons.edit, t('edit'), () => _editSentence(_selectedIndices.first)),
                 if (count == 1)
@@ -1084,12 +1087,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   _sentenceActionChip(Icons.ios_share, t('export_selected'), _exportSelectedToClipboard),
                 if (count > 0)
                   _sentenceActionChip(Icons.delete, t('delete'), _deleteSelected, isDestructive: true),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

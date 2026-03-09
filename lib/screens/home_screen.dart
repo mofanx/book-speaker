@@ -785,35 +785,38 @@ class _HomeScreenState extends State<HomeScreen> {
     final count = _selectedFolderIds.length + _selectedLessonIds.length;
     final allCount = _folders.length + _lessons.length;
     final allSelected = count == allCount && allCount > 0;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     return BottomAppBar(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      padding: EdgeInsets.only(
+        left: 8,
+        right: 8,
+        top: 8,
+        bottom: bottomPadding > 0 ? bottomPadding : 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: count + select all + invert
+          Row(
             children: [
-              // Row 1: count + select all + invert
-              Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Text('$count ${t('selected')}',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: _selectAllItems,
-                    child: Text(allSelected ? t('deselect') : t('select_all')),
-                  ),
-                  TextButton(
-                    onPressed: _invertSelectionItems,
-                    child: Text(t('invert_selection')),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              Text('$count ${t('selected')}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              TextButton(
+                onPressed: _selectAllItems,
+                child: Text(allSelected ? t('deselect') : t('select_all')),
               ),
-              // Row 2: scrollable actions
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
-                child: Row(
+              TextButton(
+                onPressed: _invertSelectionItems,
+                child: Text(t('invert_selection')),
+              ),
+            ],
+          ),
+          // Row 2: scrollable actions
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
                 if (count == 1)
                   _actionChip(Icons.edit, t('rename'), () {
@@ -841,12 +844,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   _actionChip(Icons.ios_share, t('export'), _exportSelectedItems),
                   _actionChip(Icons.delete, t('delete'), _deleteSelected, isDestructive: true),
                 ],
-              ],
             ),
           ),
         ],
-          ),
-        ),
       ),
     );
   }
